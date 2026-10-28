@@ -38,20 +38,22 @@ export const App: React.FC = () => {
   const [lastMegaFlipped, setLastMegaFlipped] = useState<Position[]>([]);
 
   const [isAiThinking, setIsAiThinking] = useState(false);
-  const [isRulesOpen, setIsRulesOpen] = useState(false);
+
+  // 初回アクセス時に特別ルールのポップアップを自動表示
+  const [isRulesOpen, setIsRulesOpen] = useState(true);
+
   const [isGameOver, setIsGameOver] = useState(false);
   const [winner, setWinner] = useState<PlayerColor | 'draw' | null>(null);
   const [showHints, setShowHints] = useState(true);
   const [isMuted, setIsMuted] = useState(soundManager.getMuted());
 
-  // メガ反転のアナウンスバナー
-  const [megaBanner, setMegaBanner] = useState<string | null>(null);
+  // メガ反転トーストメッセージ
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // 現在の合法手
   const validMoves = getValidMoves(board, turn);
   const stats = getBoardStats(board);
 
-  // ゲーム状態集計オブジェクト
   const gameStats: GameStats = {
     ...stats,
     turn,
@@ -60,10 +62,9 @@ export const App: React.FC = () => {
     winner,
   };
 
-  // メインの着手処理
+  // 着手処理
   const executeMove = useCallback(
     (pos: Position, player: PlayerColor) => {
-      // 履歴のスナップショットを保存
       setHistory((prev) => [
         ...prev,
         {
@@ -79,23 +80,22 @@ export const App: React.FC = () => {
 
       soundManager.playPlacePiece();
 
-      // 通常反転の演出
       if (moveResult.flippedNormal.length > 0) {
         soundManager.playFlipPiece(moveResult.flippedNormal.length);
       }
 
-      // 特別ルール: 2x2 メガ反転の演出
+      // 特別ルール: メガブロック反転発生時
       if (moveResult.flippedMega.length > 0) {
         soundManager.playMegaReversal();
         confetti({
-          particleCount: 80,
-          spread: 80,
+          particleCount: 70,
+          spread: 70,
           origin: { y: 0.6 },
         });
-        setMegaBanner(
-          `⚡ MEGA REVERSAL! 2×2ブロックで ${moveResult.flippedMega.length}マスを一網打尽！ ⚡`
+        setToastMessage(
+          `⚡ 2×2ブロック連鎖反転！ ${moveResult.flippedMega.length}マスを挟み撃ち！`
         );
-        setTimeout(() => setMegaBanner(null), 3500);
+        setTimeout(() => setToastMessage(null), 3000);
       }
 
       setBoard(newBoard);
@@ -103,22 +103,19 @@ export const App: React.FC = () => {
       setLastFlipped(moveResult.flippedNormal);
       setLastMegaFlipped(moveResult.flippedMega);
 
-      // 手番の交代判定
       const nextPlayer: PlayerColor = player === 'black' ? 'white' : 'black';
       const nextValidMoves = getValidMoves(newBoard, nextPlayer);
 
       if (nextValidMoves.length > 0) {
         setTurn(nextPlayer);
       } else {
-        // 次のプレイヤーに打てる手がない (パス判定)
+        // パス判定
         const currentValidAgain = getValidMoves(newBoard, player);
         if (currentValidAgain.length > 0) {
-          // パスして現在のプレイヤーがもう一度打つ
-          setMegaBanner(`⚠️ ${nextPlayer === 'black' ? '黒' : '白'}は打てる場所がないためパス！`);
-          setTimeout(() => setMegaBanner(null), 2500);
+          setToastMessage(`⚠️ ${nextPlayer === 'black' ? '黒' : '白'}は打てる場所がないためパス`);
+          setTimeout(() => setToastMessage(null), 2500);
           setTurn(player);
         } else {
-          // 両者ともに打てない -> 終局！
           endGame(newBoard);
         }
       }
@@ -126,7 +123,6 @@ export const App: React.FC = () => {
     [board, lastMove]
   );
 
-  // 終局処理
   const endGame = (finalBoard: BoardState) => {
     setIsGameOver(true);
     const finalStats = getBoardStats(finalBoard);
@@ -137,17 +133,14 @@ export const App: React.FC = () => {
     setWinner(winResult);
     soundManager.playWin();
     confetti({
-      particleCount: 120,
-      spread: 100,
+      particleCount: 100,
+      spread: 90,
       origin: { y: 0.5 },
     });
   };
 
-  // セルクリックハンドラ (人間プレイヤー)
   const handleCellClick = (r: number, c: number) => {
     if (isGameOver || isAiThinking) return;
-
-    // CPU戦で白の番ならクリック無効
     if (mode !== 'pvp' && turn === 'white') return;
 
     const isValid = validMoves.some((m) => m.row === r && m.col === c);
@@ -156,10 +149,9 @@ export const App: React.FC = () => {
     executeMove({ row: r, col: c }, turn);
   };
 
-  // AI（CPU）の思考ターン
+  // CPU思考ターン
   useEffect(() => {
-    if (isGameOver) return;
-    if (mode === 'pvp') return;
+    if (isGameOver || mode === 'pvp') return;
 
     if (turn === 'white') {
       setIsAiThinking(true);
@@ -168,30 +160,28 @@ export const App: React.FC = () => {
         if (aiMove) {
           executeMove(aiMove, 'white');
         } else {
-          // AIに打てる手がない場合はパス
           const blackMoves = getValidMoves(board, 'black');
           if (blackMoves.length > 0) {
-            setMegaBanner('⚠️ 白(CPU)は打てる場所がないためパス！');
-            setTimeout(() => setMegaBanner(null), 2000);
+            setToastMessage('⚠️ 白(CPU)は打てる手がないためパス');
+            setTimeout(() => setToastMessage(null), 2000);
             setTurn('black');
           } else {
             endGame(board);
           }
         }
         setIsAiThinking(false);
-      }, 550);
+      }, 500);
 
       return () => clearTimeout(timer);
     }
   }, [turn, mode, board, isGameOver, executeMove]);
 
-  // 待った (アンドゥ)
+  // 待った
   const handleUndo = () => {
     if (history.length === 0 || isAiThinking) return;
 
-    // 対人戦なら1手戻す、CPU戦ならCPUの手と自分の手を2手戻す
-    const stepsToUndo = mode === 'pvp' ? 1 : history.length >= 2 ? 2 : 1;
-    const targetIdx = history.length - stepsToUndo;
+    const steps = mode === 'pvp' ? 1 : history.length >= 2 ? 2 : 1;
+    const targetIdx = history.length - steps;
     const target = history[targetIdx];
 
     if (target) {
@@ -206,7 +196,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // 対局やり直し
+  // リセット
   const handleRestart = () => {
     setBoard(createInitialBoard());
     setTurn('black');
@@ -217,12 +207,12 @@ export const App: React.FC = () => {
     setIsGameOver(false);
     setWinner(null);
     setIsAiThinking(false);
-    setMegaBanner(null);
+    setToastMessage(null);
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none pb-12">
-      {/* ヘッダー＆スコアボード */}
+    <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans select-none pb-8">
+      {/* スコア ＆ コントロールヘッダー */}
       <GameScoreHeader
         stats={gameStats}
         mode={mode}
@@ -241,17 +231,17 @@ export const App: React.FC = () => {
         isAiThinking={isAiThinking}
       />
 
-      {/* メガ反転・パストーストバナー */}
-      {megaBanner && (
-        <div className="w-full max-w-xl mx-auto px-4 mt-3 animate-in fade-in slide-in-from-top-3 duration-200">
-          <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 text-slate-950 font-black px-4 py-2.5 rounded-2xl shadow-xl text-center text-xs sm:text-sm tracking-wide">
-            {megaBanner}
+      {/* スタイリッシュなトースト通知 */}
+      {toastMessage && (
+        <div className="w-full max-w-md mx-auto px-4 mt-2 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="bg-slate-800 text-amber-300 border border-amber-400/30 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-lg">
+            {toastMessage}
           </div>
         </div>
       )}
 
-      {/* 盤面メインコンテナ */}
-      <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 w-full flex-1 flex flex-col items-center justify-center">
+      {/* 盤面 */}
+      <main className="max-w-2xl mx-auto px-3 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
         <ReversiBoard
           board={board}
           validMoves={validMoves}
@@ -264,8 +254,14 @@ export const App: React.FC = () => {
         />
       </main>
 
-      {/* モーダル群 */}
-      <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} />
+      {/* 特別ルール解説モーダル (初回アクセス時自動表示) */}
+      <RulesModal
+        isOpen={isRulesOpen}
+        onClose={() => setIsRulesOpen(false)}
+        isFirstVisit={true}
+      />
+
+      {/* 終局結果モーダル */}
       <GameOverModal
         isOpen={isGameOver}
         stats={gameStats}

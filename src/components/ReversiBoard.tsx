@@ -5,6 +5,7 @@ import {
   PlayerColor,
   BOARD_SIZE,
   BLOCK_SIZE,
+  BLOCKS_PER_SIDE,
 } from '../types/reversi';
 import { getBlockDominance } from '../utils/reversiLogic';
 
@@ -38,113 +39,107 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
   lastMegaFlipped.forEach((m) => megaFlipMap.set(`${m.row},${m.col}`, true));
 
   return (
-    <div className="w-full max-w-[680px] mx-auto aspect-square p-2 sm:p-3 bg-gradient-to-br from-emerald-950 via-slate-950 to-emerald-950 rounded-3xl border-2 border-emerald-600/40 shadow-2xl shadow-emerald-950/80 flex flex-col justify-center items-center select-none relative">
-      {/* 16x16 グリッドコンテナ */}
-      <div className="w-full h-full grid grid-cols-16 grid-rows-16 gap-[1.5px] sm:gap-[2px] bg-emerald-900/40 p-1 sm:p-1.5 rounded-2xl border border-emerald-500/30 relative">
-        {board.map((row, rIdx) =>
-          row.map((cell, cIdx) => {
-            const isClickable = validMoveMap.has(`${rIdx},${cIdx}`);
-            const isLastMove = lastMove?.row === rIdx && lastMove?.col === cIdx;
-            const isMegaFlipped = megaFlipMap.has(`${rIdx},${cIdx}`);
+    <div className="w-full max-w-[620px] mx-auto select-none">
+      {/* 盤面本体 */}
+      <div className="aspect-square bg-[#1b4332] rounded-2xl p-2 sm:p-2.5 shadow-2xl border border-[#2d6a4f]/50 flex flex-col justify-center items-center">
+        {/* 8x8 の 2x2 ブロックグリッド */}
+        <div className="w-full h-full grid grid-cols-8 grid-rows-8 gap-[2.5px] sm:gap-[3px] bg-[#143225] p-1 rounded-xl">
+          {Array.from({ length: BLOCKS_PER_SIDE }).map((_, bR) =>
+            Array.from({ length: BLOCKS_PER_SIDE }).map((_, bC) => {
+              const dominance = getBlockDominance(board, { blockRow: bR, blockCol: bC });
 
-            // 2x2 ブロックの境界線の計算 (2マスごとに太い境界線)
-            const isBlockRightBorder = cIdx % BLOCK_SIZE === BLOCK_SIZE - 1 && cIdx !== BOARD_SIZE - 1;
-            const isBlockBottomBorder = rIdx % BLOCK_SIZE === BLOCK_SIZE - 1 && rIdx !== BOARD_SIZE - 1;
-
-            // このセルが属する 2x2 ブロックの完成状態
-            const blockR = Math.floor(rIdx / BLOCK_SIZE);
-            const blockC = Math.floor(cIdx / BLOCK_SIZE);
-            const blockDominance = getBlockDominance(board, { blockRow: blockR, blockCol: blockC });
-
-            return (
-              <div
-                key={`${rIdx}-${cIdx}`}
-                onClick={() => onCellClick(rIdx, cIdx)}
-                className={`relative flex items-center justify-center cursor-pointer transition-all duration-150 rounded-sm sm:rounded-[3px] ${
-                  blockDominance === 'black'
-                    ? 'bg-purple-950/50 hover:bg-purple-900/60'
-                    : blockDominance === 'white'
-                    ? 'bg-cyan-950/50 hover:bg-cyan-900/60'
-                    : 'bg-emerald-800/80 hover:bg-emerald-700/90'
-                } ${
-                  isBlockRightBorder ? 'mr-[2px] sm:mr-[3px]' : ''
-                } ${
-                  isBlockBottomBorder ? 'mb-[2px] sm:mb-[3px]' : ''
-                } ${
-                  isMegaFlipped ? 'animate-pulse ring-2 ring-amber-400 z-10' : ''
-                }`}
-                style={{
-                  boxShadow:
-                    blockDominance === 'black'
-                      ? 'inset 0 0 6px rgba(168, 85, 247, 0.4)'
-                      : blockDominance === 'white'
-                      ? 'inset 0 0 6px rgba(56, 189, 248, 0.4)'
-                      : undefined,
-                }}
-              >
-                {/* 2x2 ブロック完成時のセンターバッジ (ブロックの左上マスに表示) */}
-                {rIdx % 2 === 0 && cIdx % 2 === 0 && blockDominance && (
-                  <div className="absolute -top-1 -left-1 z-20 pointer-events-none">
-                    <span
-                      className={`text-[8px] sm:text-[10px] font-black px-1 rounded-full shadow-md ${
-                        blockDominance === 'black'
-                          ? 'bg-purple-500 text-slate-950'
-                          : 'bg-cyan-400 text-slate-950'
-                      }`}
-                      title={`${blockDominance === 'black' ? '黒' : '白'}の2x2完成ブロック`}
-                    >
-                      ★
-                    </span>
-                  </div>
-                )}
-
-                {/* 石 (Disc) */}
-                {cell && (
-                  <div
-                    className={`w-[84%] h-[84%] rounded-full shadow-md transition-transform duration-200 transform scale-95 flex items-center justify-center relative ${
-                      cell === 'black'
-                        ? 'bg-gradient-to-br from-slate-700 via-slate-900 to-black border border-slate-700/80 shadow-black/80'
-                        : 'bg-gradient-to-br from-white via-slate-100 to-slate-300 border border-slate-300 shadow-slate-950/40'
-                    } ${isLastMove ? 'ring-2 ring-amber-400 animate-bounce' : ''}`}
-                  >
-                    {/* 石の立体的な光沢ライン */}
+              return (
+                <div
+                  key={`block-${bR}-${bC}`}
+                  className={`relative grid grid-cols-2 grid-rows-2 gap-[1px] p-[1px] rounded-md transition-colors ${
+                    dominance === 'black'
+                      ? 'bg-slate-900/90 ring-1 ring-slate-600'
+                      : dominance === 'white'
+                      ? 'bg-slate-200/90 ring-1 ring-slate-400'
+                      : 'bg-[#24523f]'
+                  }`}
+                >
+                  {/* 完成ブロックの控えめな識別バッジ */}
+                  {dominance && (
                     <div
-                      className={`w-[50%] h-[50%] rounded-full opacity-30 ${
-                        cell === 'black' ? 'bg-slate-400' : 'bg-white'
+                      className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full pointer-events-none z-10 ${
+                        dominance === 'black' ? 'bg-amber-400' : 'bg-cyan-500'
                       }`}
+                      title={`${dominance === 'black' ? '黒' : '白'}の完成2×2ブロック`}
                     />
-                  </div>
-                )}
+                  )}
 
-                {/* 有効手ヒントドット */}
-                {!cell && isClickable && showHints && (
-                  <div
-                    className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full transition-transform hover:scale-150 ${
-                      turn === 'black'
-                        ? 'bg-slate-950/60 ring-1 ring-purple-400/80'
-                        : 'bg-white/80 ring-1 ring-cyan-400/80'
-                    } animate-pulse`}
-                  />
-                )}
-              </div>
-            );
-          })
-        )}
+                  {/* 2x2内の4セル */}
+                  {[0, 1].map((dr) =>
+                    [0, 1].map((dc) => {
+                      const r = bR * BLOCK_SIZE + dr;
+                      const c = bC * BLOCK_SIZE + dc;
+                      const cell = board[r][c];
+                      const isClickable = validMoveMap.has(`${r},${c}`);
+                      const isLast = lastMove?.row === r && lastMove?.col === c;
+                      const isMega = megaFlipMap.has(`${r},${c}`);
+
+                      return (
+                        <div
+                          key={`cell-${r}-${c}`}
+                          onClick={() => onCellClick(r, c)}
+                          className={`relative flex items-center justify-center cursor-pointer transition-colors rounded-[2px] ${
+                            dominance
+                              ? dominance === 'black'
+                                ? 'bg-[#1b4332]/40 hover:bg-[#2d6a4f]/50'
+                                : 'bg-[#2d6a4f]/60 hover:bg-[#3b8564]/70'
+                              : 'bg-[#1b4332] hover:bg-[#23533e]'
+                          } ${isMega ? 'ring-2 ring-amber-400/90 z-10' : ''}`}
+                        >
+                          {/* 石 (Disc) */}
+                          {cell && (
+                            <div
+                              className={`w-[82%] h-[82%] rounded-full transition-transform duration-150 transform scale-95 flex items-center justify-center shadow-md ${
+                                cell === 'black'
+                                  ? 'bg-[#1a1c23] border border-[#374151] shadow-black/60'
+                                  : 'bg-[#f8fafc] border border-[#cbd5e1] shadow-black/20'
+                              } ${isLast ? 'ring-2 ring-amber-400' : ''}`}
+                            >
+                              <div
+                                className={`w-2/5 h-2/5 rounded-full opacity-20 ${
+                                  cell === 'black' ? 'bg-white' : 'bg-slate-400'
+                                }`}
+                              />
+                            </div>
+                          )}
+
+                          {/* 有効手ヒントドット */}
+                          {!cell && isClickable && showHints && (
+                            <div
+                              className={`w-2 h-2 rounded-full pointer-events-none ${
+                                turn === 'black' ? 'bg-black/40 ring-1 ring-black/60' : 'bg-white/60 ring-1 ring-white/80'
+                              }`}
+                            />
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      {/* 2x2 ブロック区切りガイド凡例 */}
-      <div className="w-full mt-2 px-2 flex justify-between items-center text-[10px] sm:text-xs text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-purple-500/30 border border-purple-400 inline-block" />
+      {/* 控えめでシンプルな凡例 */}
+      <div className="flex justify-between items-center text-[11px] text-slate-400 mt-2 px-1">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />
           <span>黒の2×2完成</span>
-        </span>
-        <span className="text-amber-400 font-bold hidden sm:inline">
-          ⚡ 2×2が同色になると直線上の敵ブロックを一網打尽！
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm bg-cyan-500/30 border border-cyan-400 inline-block" />
+        </div>
+        <div className="text-slate-500 text-[10px]">
+          2×2の同色完成ブロックで直線上の敵石を挟めます
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block" />
           <span>白の2×2完成</span>
-        </span>
+        </div>
       </div>
     </div>
   );

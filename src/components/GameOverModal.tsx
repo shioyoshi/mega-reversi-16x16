@@ -1,5 +1,5 @@
 import React from 'react';
-import { PlayerColor, GameStats } from '../types/reversi';
+import { GameStats } from '../types/reversi';
 
 interface GameOverModalProps {
   isOpen: boolean;
@@ -18,67 +18,63 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   const isBlackWin = stats.winner === 'black';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-md p-6 shadow-2xl text-slate-100 text-center">
-        <div className="text-5xl mb-3">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-sm p-6 shadow-2xl text-slate-100 text-center">
+        <div className="text-3xl mb-2">
           {isDraw ? '🤝' : isBlackWin ? '⚫' : '⚪'}
         </div>
 
-        <h2 className="text-2xl font-black font-display text-white mb-1">
+        <h2 className="text-xl font-bold font-display text-white mb-1">
           {isDraw
-            ? '引き分け！ (DRAW)'
+            ? '引き分け (Draw)'
             : isBlackWin
-            ? '黒 (BLACK) の勝利！ 🎉'
-            : '白 (WHITE) の勝利！ 🎉'}
+            ? '黒 (Black) の勝利！'
+            : '白 (White) の勝利！'}
         </h2>
         <p className="text-xs text-slate-400 mb-5">
-          16×16盤面の激闘が決着しました！
+          16×16盤面の対局が決着しました
         </p>
 
-        {/* 最終スコア */}
-        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 mb-5">
-          <div className="text-xs font-bold text-slate-400 mb-3">最終結果</div>
-
-          <div className="grid grid-cols-2 gap-3 mb-3">
+        {/* スコア比較カード */}
+        <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-5">
+          <div className="grid grid-cols-2 gap-3">
             {/* 黒 */}
             <div
-              className={`p-3 rounded-xl border ${
+              className={`p-3 rounded-lg border ${
                 isBlackWin
-                  ? 'bg-purple-950/40 border-purple-500/50 shadow-md shadow-purple-500/20'
-                  : 'bg-slate-900 border-slate-800'
+                  ? 'bg-slate-900 border-amber-400/80 ring-1 ring-amber-400/30'
+                  : 'bg-slate-900/60 border-slate-800'
               }`}
             >
-              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-purple-300 mb-1">
-                <span className="w-3 h-3 rounded-full bg-slate-950 border border-purple-400 inline-block" />
-                <span>黒 (BLACK)</span>
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-300 mb-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#1a1c23] border border-[#374151] inline-block" />
+                <span>黒</span>
               </div>
-              <div className="text-2xl font-black font-display text-white">
-                {stats.blackCount}{' '}
-                <span className="text-xs font-normal text-slate-400">枚</span>
+              <div className="text-2xl font-bold font-display text-white">
+                {stats.blackCount}
               </div>
-              <div className="text-[10px] text-purple-400 mt-1">
-                完成ブロック: {stats.blackBlocksCount} 個
+              <div className="text-[10px] text-slate-400 mt-1">
+                2×2完成: {stats.blackBlocksCount}
               </div>
             </div>
 
             {/* 白 */}
             <div
-              className={`p-3 rounded-xl border ${
+              className={`p-3 rounded-lg border ${
                 !isBlackWin && !isDraw
-                  ? 'bg-cyan-950/40 border-cyan-500/50 shadow-md shadow-cyan-500/20'
-                  : 'bg-slate-900 border-slate-800'
+                  ? 'bg-slate-900 border-cyan-400/80 ring-1 ring-cyan-400/30'
+                  : 'bg-slate-900/60 border-slate-800'
               }`}
             >
-              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-cyan-300 mb-1">
-                <span className="w-3 h-3 rounded-full bg-white border border-slate-300 inline-block" />
-                <span>白 (WHITE)</span>
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-300 mb-1">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#f8fafc] border border-[#cbd5e1] inline-block" />
+                <span>白</span>
               </div>
-              <div className="text-2xl font-black font-display text-white">
-                {stats.whiteCount}{' '}
-                <span className="text-xs font-normal text-slate-400">枚</span>
+              <div className="text-2xl font-bold font-display text-white">
+                {stats.whiteCount}
               </div>
-              <div className="text-[10px] text-cyan-400 mt-1">
-                完成ブロック: {stats.whiteBlocksCount} 個
+              <div className="text-[10px] text-slate-400 mt-1">
+                2×2完成: {stats.whiteBlocksCount}
               </div>
             </div>
           </div>
@@ -86,9 +82,9 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
 
         <button
           onClick={onRestart}
-          className="w-full py-3.5 px-6 rounded-2xl font-black text-white bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 shadow-xl shadow-cyan-500/25 active:scale-95 transition cursor-pointer text-sm"
+          className="w-full py-3 px-4 rounded-xl font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 active:scale-[0.99] transition cursor-pointer text-xs shadow-md shadow-amber-400/20"
         >
-          もう一度対戦する 🔄
+          もう一度対戦する
         </button>
       </div>
     </div>

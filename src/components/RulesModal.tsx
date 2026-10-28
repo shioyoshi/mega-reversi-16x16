@@ -3,104 +3,107 @@ import React from 'react';
 interface RulesModalProps {
   isOpen: boolean;
   onClose: () => void;
+  isFirstVisit?: boolean;
 }
 
-export const RulesModal: React.FC<RulesModalProps> = ({ isOpen, onClose }) => {
+export const RulesModal: React.FC<RulesModalProps> = ({
+  isOpen,
+  onClose,
+  isFirstVisit = false,
+}) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-2xl p-6 shadow-2xl text-slate-100 my-8">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-4">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">📜</span>
-            <div>
-              <h2 className="text-xl font-bold font-display text-white">
-                16×16 メガオセロ 特別ルール説明
-              </h2>
-              <p className="text-xs text-slate-400">
-                広大な16×16盤面と「2×2ブロック挟み込み」の新感覚リバーシ！
-              </p>
-            </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg p-6 shadow-2xl text-slate-100 my-8">
+        {/* ヘッダー */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold text-white tracking-wide">
+              {isFirstVisit ? 'ようこそ！16×16 オセロ 特別ルール' : '特別ルールの解説'}
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              通常のオセロルール ＋ 2×2ブロック挟み込み機能
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-xl p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            className="text-slate-400 hover:text-white text-lg p-1.5 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+            aria-label="閉じる"
           >
             ✕
           </button>
         </div>
 
-        <div className="space-y-4 text-xs leading-relaxed text-slate-300 max-h-[65vh] overflow-y-auto pr-1">
-          {/* 基本ルール */}
-          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-            <h3 className="text-sm font-bold text-cyan-400 mb-2 flex items-center gap-2">
-              <span>⚪⚫</span>
-              <span>1. 基本ルール（通常のオセロルール）</span>
-            </h3>
-            <ul className="list-disc list-inside space-y-1 text-slate-400 pl-1">
-              <li>盤面は通常の4倍の広さとなる <strong>16×16 (計256マス)</strong> です。</li>
-              <li>相手の石を自色の石で挟むと、その間にある石が自分の色に裏返ります。</li>
-              <li>縦・横・斜めの8方向すべてで挟み込みが有効です。</li>
-              <li>打てる場所がない時は自動的にパスとなります。両者打てなくなったら対局終了です。</li>
-            </ul>
-          </div>
-
-          {/* 特別ルール: 2x2 ブロック挟み込み */}
-          <div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 p-4 rounded-2xl border border-amber-500/30">
-            <h3 className="text-sm font-bold text-amber-400 mb-2 flex items-center gap-2">
-              <span>⚡</span>
-              <span>2. 【特別ルール】2×2 ブロック挟み込み（メガ反転）</span>
-            </h3>
-            <div className="space-y-2 text-slate-300">
-              <p>
-                盤面は縦横1/8ずつ、<strong>「2×2の4マス区画」が合計64個 (8×8)</strong> 配置されています。
-                金色の太枠で区切られているのがこの「2×2ブロック」です。
-              </p>
-              <div className="bg-slate-900/90 p-3 rounded-xl border border-amber-500/20 space-y-1.5">
-                <div className="font-bold text-amber-300 text-xs">
-                  🔥 メガ反転の発動条件：
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  いずれかの 2×2 ブロックの <strong>4マスすべてが同じ色（同色完成ブロック）</strong> になった時！
-                </p>
-                <p className="text-[11px] text-slate-400">
-                  その完成ブロックから縦・横・斜めの方向に、相手の石が存在するブロックを挟んで、
-                  その先の直線上に <strong>同じ色の別の完成ブロック</strong> が存在した場合…
-                </p>
-                <p className="text-xs font-black text-amber-400 pt-1">
-                  👉 間にあるすべてのブロック内の相手の石が一気に自色へ大反転します！
-                </p>
+        {/* 3ステップ図解 */}
+        <div className="space-y-4 text-xs leading-relaxed">
+          {/* STEP 1: 2x2 ブロックを揃える */}
+          <div className="bg-slate-950/90 rounded-xl p-3.5 border border-slate-800 flex items-center gap-4">
+            <div className="shrink-0 w-16 h-16 bg-emerald-950 border border-emerald-700/60 rounded-lg p-1 grid grid-cols-2 grid-rows-2 gap-1 shadow-inner">
+              <div className="bg-slate-900 rounded-full border border-slate-700 shadow-sm" />
+              <div className="bg-slate-900 rounded-full border border-slate-700 shadow-sm" />
+              <div className="bg-slate-900 rounded-full border border-slate-700 shadow-sm" />
+              <div className="bg-slate-900 rounded-full border border-slate-700 shadow-sm" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-amber-400 mb-1">
+                STEP 1. 縦横1/8の「2×2マス」を同色で制覇！
               </div>
+              <p className="text-slate-300 text-[11px]">
+                盤面は2×2（計64区画）に太線で区切られています。
+                この4マスすべてを同じ色で埋めると<strong>【完成ブロック】</strong>になります。
+              </p>
             </div>
           </div>
 
-          {/* 戦略のコツ */}
-          <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-            <h3 className="text-sm font-bold text-emerald-400 mb-2 flex items-center gap-2">
-              <span>💡</span>
-              <span>3. 勝利への戦略のヒント</span>
-            </h3>
-            <ul className="list-disc list-inside space-y-1 text-slate-400 pl-1">
-              <li>
-                <strong>2×2の要塞を固めろ</strong>: 4マスを同色にして完成ブロックを作ると、相手のメガ反転を防ぐ防壁になり、同時に強力な反撃の砲台になります！
-              </li>
-              <li>
-                <strong>ラインを狙え</strong>: 同色の完成ブロックを離れた位置に2つ作ると、その一直線上にある敵ブロックを一網打尽にする「メガリバーサル」が炸裂します！
-              </li>
-              <li>
-                <strong>四隅（コーナー）は超重要</strong>: 四隅の 2×2 ブロックを制覇したプレイヤーは盤面を圧倒的に支配できます。
-              </li>
-            </ul>
+          {/* STEP 2: 別の完成ブロックで挟む */}
+          <div className="bg-slate-950/90 rounded-xl p-3.5 border border-slate-800 flex items-center gap-4">
+            <div className="shrink-0 w-16 h-16 bg-emerald-950 border border-emerald-700/60 rounded-lg p-1.5 flex flex-col justify-between items-center shadow-inner">
+              <div className="w-4 h-4 rounded-full bg-slate-900 border border-slate-700" />
+              <div className="w-3.5 h-3.5 rounded-full bg-white border border-slate-300 animate-pulse" />
+              <div className="w-4 h-4 rounded-full bg-slate-900 border border-slate-700" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-cyan-400 mb-1">
+                STEP 2. 直線上に別の「完成ブロック」があると…
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                縦・横・斜めの直線上に、同じ色の完成ブロックがもう1つ存在し、その間に相手の石がある場合…
+              </p>
+            </div>
           </div>
+
+          {/* STEP 3: 一網打尽に大反転 */}
+          <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-amber-500/10 rounded-xl p-3.5 border border-amber-500/30 flex items-center gap-4">
+            <div className="shrink-0 w-16 h-16 bg-emerald-950 border border-amber-500/60 rounded-lg p-1.5 flex flex-col justify-between items-center shadow-inner">
+              <div className="w-4 h-4 rounded-full bg-slate-900 border border-amber-400 shadow" />
+              <div className="w-4 h-4 rounded-full bg-slate-900 border border-amber-400 shadow transition-all duration-300" />
+              <div className="w-4 h-4 rounded-full bg-slate-900 border border-amber-400 shadow" />
+            </div>
+            <div>
+              <div className="text-xs font-bold text-amber-300 mb-1">
+                STEP 3. 間の相手の石が一気に大反転！
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                普通のオセロのように、<strong>間にある相手の石がすべて自分の色にひっくり返ります！</strong>
+                離れた場所に2×2を作って敵陣を挟み撃ちにする大逆転が可能です。
+              </p>
+            </div>
+          </div>
+
+          {/* 通常ルール補足 */}
+          <p className="text-[11px] text-slate-400 text-center">
+            ※もちろん、通常の1マス単位のオセロルール（挟んだ石を裏返す）も通常通り行われます。
+          </p>
         </div>
 
-        <div className="mt-5 pt-3 border-t border-slate-800 flex justify-end">
+        {/* スタートボタン */}
+        <div className="mt-5 pt-3 border-t border-slate-800">
           <button
             onClick={onClose}
-            className="py-2.5 px-6 rounded-xl font-bold text-slate-950 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 shadow-lg shadow-amber-500/25 transition cursor-pointer text-xs"
+            className="w-full py-3 px-4 rounded-xl font-bold text-sm text-slate-950 bg-amber-400 hover:bg-amber-300 active:scale-[0.99] transition cursor-pointer shadow-md shadow-amber-400/20"
           >
-            ルールを理解してプレイ開始！
+            対局を始める
           </button>
         </div>
       </div>
