@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MuscleStats, Exercise } from '../types/game';
 
 interface ThreeGymCanvasProps {
@@ -7,8 +8,7 @@ interface ThreeGymCanvasProps {
   muscleStats: MuscleStats;
   isPumpMode: boolean;
   fatigue: number;
-  repTrigger: number; // レップが押されるたびにインクリメントされる
-  onRepCompleted?: () => void;
+  repTrigger: number;
 }
 
 export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
@@ -19,17 +19,25 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
   repTrigger,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [cameraAngle, setCameraAngle] = useState<'front' | 'side' | 'isometric'>('isometric');
-
-  // Three.js 参照
-  const sceneRef = useRef<THREE.Scene | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 
-  // キャラクターパーツ参照
+  // 常に最新の currentExercise を参照するための ref
+  const currentExerciseRef = useRef(currentExercise);
+  currentExerciseRef.current = currentExercise;
+
+  const [activeView, setActiveView] = useState<'diagonal' | 'front' | 'side'>('diagonal');
+
+  // アニメーション関連
+  const animProgressRef = useRef<number>(0);
+  const isAnimatingRef = useRef<boolean>(false);
+  const repTriggerRef = useRef(repTrigger);
+
+  // キャラクターのパーツ参照
   const characterRef = useRef<{
     root: THREE.Group;
-    torso: THREE.Group;
+    body: THREE.Group; // 全身グループ
+    torso: THREE.Group; // 上半身
     chestMesh: THREE.Mesh;
     abdomenMesh: THREE.Mesh;
     head: THREE.Mesh;
@@ -37,6 +45,7 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     leftLowerArm: THREE.Mesh;
     rightUpperArm: THREE.Mesh;
     rightLowerArm: THREE.Mesh;
+    hips: THREE.Group; // 下半身
     leftUpperLeg: THREE.Mesh;
     leftLowerLeg: THREE.Mesh;
     rightUpperLeg: THREE.Mesh;
@@ -48,156 +57,159 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     auraLight: THREE.PointLight;
   } | null>(null);
 
-  // アニメーション状態
-  const animProgressRef = useRef<number>(0);
-  const isAnimatingRef = useRef<boolean>(false);
-  const repTriggerRef = useRef(repTrigger);
-
-  // マウスドラッグによるオービット操作
-  const isDraggingRef = useRef(false);
-  const previousMousePositionRef = useRef({ x: 0, y: 0 });
-  const cameraRotationRef = useRef({ theta: 0.3, phi: 0.35, radius: 4.8 });
-
   // レップトリガー検知
   useEffect(() => {
     if (repTrigger !== repTriggerRef.current) {
       repTriggerRef.current = repTrigger;
-      // レップアニメーション開始
       isAnimatingRef.current = true;
       animProgressRef.current = 0;
     }
   }, [repTrigger]);
 
-  // Three.js 初期化
+  // Three.js シーンの初期化
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const width = container.clientWidth;
-    const height = container.clientHeight;
+    const width = container.clientWidth || 600;
+    const height = container.clientHeight || 500;
 
     // 1. シーン
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0f1d);
-    scene.fog = new THREE.FogExp2(0x0a0f1d, 0.08);
-    sceneRef.current = scene;
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.06);
 
     // 2. カメラ
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+    camera.position.set(2.5, 2.2, 4.0);
     cameraRef.current = camera;
-    updateCameraPosition();
 
     // 3. レンダラー
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    rendererRef.current = renderer;
     container.replaceChildren(renderer.domElement);
 
-    // 4. ライティング
-    const ambientLight = new THREE.AmbientLight(0x2a3b5c, 1.2);
+    // 4. OrbitControls (安全で滑らかなカメラ操作)
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.target.set(0, 1.05, 0); // キャラクターの胸あたりを注視
+    controls.minDistance = 2.0;
+    controls.maxDistance = 8.0;
+    // 地面より下に潜らないように制限
+    controls.maxPolarAngle = Math.PI / 2 - 0.05;
+    // 真上垂直になりすぎて特異点（NaN）に触れないように制限
+    controls.minPolarAngle = 0.25;
+    controlsRef.current = controls;
+
+    // 5. ライティング
+    const ambientLight = new THREE.AmbientLight(0x384c70, 1.4);
     scene.add(ambientLight);
 
-    const mainSpot = new THREE.SpotLight(0x38bdf8, 4.5);
-    mainSpot.position.set(3, 6, 4);
+    const mainSpot = new THREE.SpotLight(0x38bdf8, 5.0);
+    mainSpot.position.set(3.5, 7.0, 4.5);
     mainSpot.angle = Math.PI / 4;
-    mainSpot.penumbra = 0.5;
+    mainSpot.penumbra = 0.6;
     mainSpot.castShadow = true;
     mainSpot.shadow.mapSize.width = 1024;
     mainSpot.shadow.mapSize.height = 1024;
     scene.add(mainSpot);
 
-    const rimLight = new THREE.DirectionalLight(0xf43f5e, 2.0);
-    rimLight.position.set(-4, 3, -4);
+    const rimLight = new THREE.DirectionalLight(0xf43f5e, 2.5);
+    rimLight.position.set(-4.0, 3.5, -4.0);
     scene.add(rimLight);
 
-    // パンプ時のオーラライト
-    const auraLight = new THREE.PointLight(0xf97316, 0, 5);
+    const fillLight = new THREE.DirectionalLight(0x0284c7, 1.5);
+    fillLight.position.set(-3.0, 4.0, 3.0);
+    scene.add(fillLight);
+
+    // パンプ時の爆発的オーラライト
+    const auraLight = new THREE.PointLight(0xf97316, 0, 6);
     auraLight.position.set(0, 1.2, 0);
     scene.add(auraLight);
 
-    // 5. ジム環境（フロア ＆ ネオン）
-    const floorGeo = new THREE.PlaneGeometry(24, 24);
+    // 6. ジム環境（フロア、ネオンウォール、グリッド）
+    const floorGeo = new THREE.PlaneGeometry(30, 30);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0x111827,
-      roughness: 0.6,
-      metalness: 0.2,
+      color: 0x0f172a,
+      roughness: 0.5,
+      metalness: 0.3,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // グリッド装飾ライン
-    const grid = new THREE.GridHelper(24, 24, 0x0284c7, 0x1e293b);
+    const grid = new THREE.GridHelper(30, 30, 0x0284c7, 0x1e293b);
     grid.position.y = 0.005;
     scene.add(grid);
 
     // ネオンウォール
-    const wallGeo = new THREE.BoxGeometry(16, 6, 0.2);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+    const wallGeo = new THREE.BoxGeometry(20, 8, 0.3);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x0b1120, roughness: 0.8 });
     const wall = new THREE.Mesh(wallGeo, wallMat);
-    wall.position.set(0, 3, -6);
+    wall.position.set(0, 4, -7);
     scene.add(wall);
 
-    // ネオンロゴライトバー
-    const neonGeo = new THREE.BoxGeometry(8, 0.12, 0.1);
+    // ネオンバー
+    const neonGeo = new THREE.BoxGeometry(10, 0.15, 0.1);
     const neonMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
     const neonBar = new THREE.Mesh(neonGeo, neonMat);
-    neonBar.position.set(0, 4.5, -5.85);
+    neonBar.position.set(0, 5.5, -6.8);
     scene.add(neonBar);
 
-    // 6. ジム備品（ベンチ台、バーベル、ダンベル、懸垂バー）
+    // 7. ジム備品（ベンチ台、バーベル、ダンベル、懸垂バー）
     // ベンチ台
     const benchGroup = new THREE.Group();
     const benchTop = new THREE.Mesh(
-      new THREE.BoxGeometry(0.5, 0.1, 1.8),
+      new THREE.BoxGeometry(0.55, 0.12, 1.8),
       new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4 })
     );
     benchTop.position.set(0, 0.45, 0);
     benchTop.castShadow = true;
     benchGroup.add(benchTop);
 
-    const benchLeg1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04, 0.04, 0.45),
-      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 })
-    );
-    benchLeg1.position.set(0, 0.225, 0.7);
-    benchGroup.add(benchLeg1);
-    const benchLeg2 = benchLeg1.clone();
-    benchLeg2.position.set(0, 0.225, -0.7);
-    benchGroup.add(benchLeg2);
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 });
+    const bLeg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.45), legMat);
+    bLeg1.position.set(0, 0.225, 0.65);
+    bLeg1.castShadow = true;
+    benchGroup.add(bLeg1);
+
+    const bLeg2 = bLeg1.clone();
+    bLeg2.position.set(0, 0.225, -0.65);
+    benchGroup.add(bLeg2);
     scene.add(benchGroup);
 
     // バーベル
     const barbellGroup = new THREE.Group();
     const bar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.025, 0.025, 2.2),
-      new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.9, roughness: 0.1 })
+      new THREE.CylinderGeometry(0.025, 0.025, 2.3),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 })
     );
     bar.rotation.z = Math.PI / 2;
     bar.castShadow = true;
     barbellGroup.add(bar);
 
-    // プレート (左右)
-    const plateGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.06, 24);
-    const plateMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
-    const plateL1 = new THREE.Mesh(plateGeo, plateMat);
-    plateL1.rotation.z = Math.PI / 2;
-    plateL1.position.set(-0.85, 0, 0);
-    barbellGroup.add(plateL1);
-    const plateL2 = plateL1.clone();
-    plateL2.position.set(-0.93, 0, 0);
-    barbellGroup.add(plateL2);
+    const plateGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.06, 24);
+    const plateMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 });
+    const pL1 = new THREE.Mesh(plateGeo, plateMat);
+    pL1.rotation.z = Math.PI / 2;
+    pL1.position.set(-0.9, 0, 0);
+    pL1.castShadow = true;
+    barbellGroup.add(pL1);
+    const pL2 = pL1.clone();
+    pL2.position.set(-0.98, 0, 0);
+    barbellGroup.add(pL2);
 
-    const plateR1 = plateL1.clone();
-    plateR1.position.set(0.85, 0, 0);
-    barbellGroup.add(plateR1);
-    const plateR2 = plateL1.clone();
-    plateR2.position.set(0.93, 0, 0);
-    barbellGroup.add(plateR2);
+    const pR1 = pL1.clone();
+    pR1.position.set(0.9, 0, 0);
+    barbellGroup.add(pR1);
+    const pR2 = pL1.clone();
+    pR2.position.set(0.98, 0, 0);
+    barbellGroup.add(pR2);
     scene.add(barbellGroup);
 
     // ダンベル
@@ -205,123 +217,127 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     const createDumbbell = (xPos: number) => {
       const db = new THREE.Group();
       const dbBar = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.02, 0.02, 0.3),
+        new THREE.CylinderGeometry(0.02, 0.02, 0.35),
         new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 })
       );
       dbBar.rotation.z = Math.PI / 2;
       db.add(dbBar);
-      const dbPlateGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16);
-      const dbP1 = new THREE.Mesh(dbPlateGeo, plateMat);
+      const dbPGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16);
+      const dbP1 = new THREE.Mesh(dbPGeo, plateMat);
       dbP1.rotation.z = Math.PI / 2;
-      dbP1.position.set(-0.12, 0, 0);
+      dbP1.position.set(-0.14, 0, 0);
       db.add(dbP1);
       const dbP2 = dbP1.clone();
-      dbP2.position.set(0.12, 0, 0);
+      dbP2.position.set(0.14, 0, 0);
       db.add(dbP2);
       db.position.set(xPos, 0, 0);
       return db;
     };
-    const dbLeft = createDumbbell(-0.4);
-    const dbRight = createDumbbell(0.4);
-    dumbbellsGroup.add(dbLeft);
-    dumbbellsGroup.add(dbRight);
+    dumbbellsGroup.add(createDumbbell(-0.45));
+    dumbbellsGroup.add(createDumbbell(0.45));
     scene.add(dumbbellsGroup);
 
-    // 懸垂バー (Pull-up Bar)
+    // 懸垂バー
     const pullupGroup = new THREE.Group();
-    const pPost1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04, 0.04, 2.5),
-      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })
-    );
-    pPost1.position.set(-0.7, 1.25, 0);
+    const pPost1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.6), legMat);
+    pPost1.position.set(-0.75, 1.3, 0);
     pullupGroup.add(pPost1);
     const pPost2 = pPost1.clone();
-    pPost2.position.set(0.7, 1.25, 0);
+    pPost2.position.set(0.75, 1.3, 0);
     pullupGroup.add(pPost2);
     const pTopBar = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 1.6),
-      new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 })
+      new THREE.CylinderGeometry(0.03, 0.03, 1.8),
+      new THREE.MeshStandardMaterial({ color: 0xd1d5db, metalness: 0.9 })
     );
     pTopBar.rotation.z = Math.PI / 2;
-    pTopBar.position.set(0, 2.45, 0);
+    pTopBar.position.set(0, 2.55, 0);
     pullupGroup.add(pTopBar);
     scene.add(pullupGroup);
 
-    // 7. 3D キャラクター（スタイリッシュな筋肉メッシュ）
-    const skinMat = new THREE.MeshStandardMaterial({
-      color: 0xe0a982,
-      roughness: 0.45,
-      metalness: 0.1,
-    });
-    const tankTopMat = new THREE.MeshStandardMaterial({
-      color: 0x0284c7, // 鮮やかなシアン
-      roughness: 0.6,
-    });
-    const shortsMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b, // スタイリッシュダーク
-      roughness: 0.7,
-    });
+    // 8. 階層型 3D キャラクター（頑丈な骨格階層構造）
+    const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a982, roughness: 0.45 });
+    const tankTopMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.5 });
+    const shortsMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.7 });
 
-    const rootGroup = new THREE.Group();
-    scene.add(rootGroup);
+    const root = new THREE.Group();
+    scene.add(root);
 
-    // 胴体グループ
+    const body = new THREE.Group();
+    root.add(body);
+
+    // 胴体グループ (腰の位置をピボットにする)
     const torso = new THREE.Group();
-    rootGroup.add(torso);
+    torso.position.set(0, 0.95, 0);
+    body.add(torso);
 
-    // 胸部 (Chest)
-    const chestGeo = new THREE.BoxGeometry(0.55, 0.38, 0.32);
-    const chestMesh = new THREE.Mesh(chestGeo, tankTopMat);
-    chestMesh.position.y = 1.35;
-    chestMesh.castShadow = true;
-    torso.add(chestMesh);
-
-    // 腹部 (Abdomen)
-    const abdomenGeo = new THREE.BoxGeometry(0.42, 0.32, 0.26);
-    const abdomenMesh = new THREE.Mesh(abdomenGeo, tankTopMat);
-    abdomenMesh.position.y = 1.05;
+    // 腹部
+    const abdomenMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.3, 0.26), tankTopMat);
+    abdomenMesh.position.y = 0.15;
     abdomenMesh.castShadow = true;
     torso.add(abdomenMesh);
 
-    // 頭部 (Head)
-    const headGeo = new THREE.SphereGeometry(0.16, 24, 24);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.y = 1.72;
+    // 胸部
+    const chestMesh = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.38, 0.32), tankTopMat);
+    chestMesh.position.y = 0.46;
+    chestMesh.castShadow = true;
+    torso.add(chestMesh);
+
+    // 頭部
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 24), skinMat);
+    head.position.y = 0.82;
     head.castShadow = true;
     torso.add(head);
 
-    // 腕パーツ作成ヘルパー
+    // リム作成ヘルパー
     const createLimb = (length: number, radius: number, mat: THREE.Material) => {
       const geo = new THREE.CylinderGeometry(radius * 0.9, radius, length, 16);
+      geo.translate(0, -length / 2, 0); // ピボットを関節上端にする
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
       return mesh;
     };
 
-    // 腕 (Arms)
+    // 腕 (胸の左右から生える)
     const leftUpperArm = createLimb(0.35, 0.11, skinMat);
+    leftUpperArm.position.set(-0.35, 0.6, 0);
+    torso.add(leftUpperArm);
+
     const leftLowerArm = createLimb(0.35, 0.09, skinMat);
+    leftLowerArm.position.set(0, -0.35, 0);
+    leftUpperArm.add(leftLowerArm);
+
     const rightUpperArm = createLimb(0.35, 0.11, skinMat);
+    rightUpperArm.position.set(0.35, 0.6, 0);
+    torso.add(rightUpperArm);
+
     const rightLowerArm = createLimb(0.35, 0.09, skinMat);
+    rightLowerArm.position.set(0, -0.35, 0);
+    rightUpperArm.add(rightLowerArm);
 
-    rootGroup.add(leftUpperArm);
-    rootGroup.add(leftLowerArm);
-    rootGroup.add(rightUpperArm);
-    rootGroup.add(rightLowerArm);
+    // 下半身グループ (腰・脚)
+    const hips = new THREE.Group();
+    hips.position.set(0, 0.95, 0);
+    body.add(hips);
 
-    // 脚 (Legs)
     const leftUpperLeg = createLimb(0.48, 0.15, shortsMat);
-    const leftLowerLeg = createLimb(0.48, 0.11, skinMat);
-    const rightUpperLeg = createLimb(0.48, 0.15, shortsMat);
-    const rightLowerLeg = createLimb(0.48, 0.11, skinMat);
+    leftUpperLeg.position.set(-0.16, 0, 0);
+    hips.add(leftUpperLeg);
 
-    rootGroup.add(leftUpperLeg);
-    rootGroup.add(leftLowerLeg);
-    rootGroup.add(rightUpperLeg);
-    rootGroup.add(rightLowerLeg);
+    const leftLowerLeg = createLimb(0.48, 0.11, skinMat);
+    leftLowerLeg.position.set(0, -0.48, 0);
+    leftUpperLeg.add(leftLowerLeg);
+
+    const rightUpperLeg = createLimb(0.48, 0.15, shortsMat);
+    rightUpperLeg.position.set(0.16, 0, 0);
+    hips.add(rightUpperLeg);
+
+    const rightLowerLeg = createLimb(0.48, 0.11, skinMat);
+    rightLowerLeg.position.set(0, -0.48, 0);
+    rightUpperLeg.add(rightLowerLeg);
 
     characterRef.current = {
-      root: rootGroup,
+      root,
+      body,
       torso,
       chestMesh,
       abdomenMesh,
@@ -330,6 +346,7 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
       leftLowerArm,
       rightUpperArm,
       rightLowerArm,
+      hips,
       leftUpperLeg,
       leftLowerLeg,
       rightUpperLeg,
@@ -341,31 +358,29 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
       auraLight,
     };
 
-    // 8. アニメーション＆レンダーループ
+    // 9. メインレンダーループ
     let animationFrameId: number;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      // レップアニメーションの進行
+      // レップアニメーション進行 (0 -> 1 -> 0)
       if (isAnimatingRef.current) {
-        animProgressRef.current += 0.065;
+        animProgressRef.current += 0.07;
         if (animProgressRef.current >= 1) {
           animProgressRef.current = 1;
           isAnimatingRef.current = false;
         }
       } else if (animProgressRef.current > 0) {
-        // 元の姿勢へスムーズに戻る
         animProgressRef.current = Math.max(0, animProgressRef.current - 0.05);
       }
 
-      // サイン波イージング (0 -> 1 -> 0)
       const p = Math.sin(animProgressRef.current * Math.PI);
 
-      // 種目に応じたポーズ更新
-      updateExercisePose(currentExercise.id, p);
+      // 最新の種目IDでポーズ更新
+      updateExercisePose(currentExerciseRef.current.id, p);
 
-      // パンプモードのオーラ演出
+      // パンプモードのオーラ発光
       if (characterRef.current) {
         if (isPumpMode) {
           characterRef.current.auraLight.intensity = 3.5 + Math.sin(Date.now() * 0.01) * 1.5;
@@ -374,6 +389,7 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
         }
       }
 
+      controls.update();
       renderer.render(scene, camera);
     };
 
@@ -382,8 +398,8 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     // リサイズハンドラ
     const handleResize = () => {
       if (!container || !renderer || !camera) return;
-      const newWidth = container.clientWidth;
-      const newHeight = container.clientHeight;
+      const newWidth = container.clientWidth || 600;
+      const newHeight = container.clientHeight || 500;
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight);
@@ -394,6 +410,7 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
+      controls.dispose();
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -401,380 +418,259 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
     };
   }, []);
 
-  // カメラ位置の更新
-  const updateCameraPosition = () => {
-    if (!cameraRef.current) return;
-    const { theta, phi, radius } = cameraRotationRef.current;
-    const x = radius * Math.sin(phi) * Math.sin(theta);
-    const y = radius * Math.cos(phi);
-    const z = radius * Math.sin(phi) * Math.cos(theta);
-
-    cameraRef.current.position.set(x, y, z);
-    cameraRef.current.lookAt(0, 1.0, 0);
-  };
-
   // 筋肉量・ステータスによる3Dメッシュのビルドアップ（パンプ＆肥大化）
   useEffect(() => {
     if (!characterRef.current) return;
     const { chestMesh, abdomenMesh, leftUpperArm, rightUpperArm, leftUpperLeg, rightUpperLeg } =
       characterRef.current;
 
-    // 大胸筋の厚み (初期レベル10〜200+)
-    const chestScale = 1.0 + Math.min(0.6, (muscleStats.chest - 10) * 0.006);
-    chestMesh.scale.set(chestScale, 1.0 + (chestScale - 1) * 0.3, chestScale);
+    const chestScale = 1.0 + Math.min(0.7, (muscleStats.chest - 10) * 0.006);
+    chestMesh.scale.set(chestScale, 1.0 + (chestScale - 1) * 0.25, chestScale);
 
-    // 腹筋・体幹
     const coreScale = 1.0 + Math.min(0.4, (muscleStats.core - 10) * 0.004);
     abdomenMesh.scale.set(coreScale, 1.0, coreScale);
 
-    // 腕の太さ
-    const armScale = 1.0 + Math.min(0.7, (muscleStats.arms - 10) * 0.007);
+    const armScale = 1.0 + Math.min(0.75, (muscleStats.arms - 10) * 0.007);
     leftUpperArm.scale.set(armScale, 1.0, armScale);
     rightUpperArm.scale.set(armScale, 1.0, armScale);
 
-    // 脚の太さ
-    const legScale = 1.0 + Math.min(0.6, (muscleStats.legs - 10) * 0.005);
+    const legScale = 1.0 + Math.min(0.65, (muscleStats.legs - 10) * 0.005);
     leftUpperLeg.scale.set(legScale, 1.0, legScale);
     rightUpperLeg.scale.set(legScale, 1.0, legScale);
   }, [muscleStats]);
 
-  // 種目に応じた3Dポーズ＆器具配置の更新
+  // 全18種目に対応した安全なポーズ更新（階層ピボット制御）
   const updateExercisePose = (exerciseId: string, p: number) => {
     if (!characterRef.current) return;
     const c = characterRef.current;
 
-    // 全器具を一旦非表示に
+    // 器具を非表示にしてリセット
     c.bench.visible = false;
     c.barbell.visible = false;
     c.dumbbells.visible = false;
     c.pullupBar.visible = false;
 
-    // リセット
+    // 基本姿勢のリセット (毎回必ず安全にゼロリセット)
     c.root.position.set(0, 0, 0);
     c.root.rotation.set(0, 0, 0);
-    c.torso.position.set(0, 0, 0);
+    c.body.position.set(0, 0, 0);
+    c.body.rotation.set(0, 0, 0);
+    c.torso.position.set(0, 0.95, 0);
     c.torso.rotation.set(0, 0, 0);
+    c.hips.position.set(0, 0.95, 0);
+    c.hips.rotation.set(0, 0, 0);
 
-    if (exerciseId === 'pushup') {
-      // --- 腕立て伏せ (床にうつ伏せ、沈み込んで押し上げる) ---
-      const dip = p * 0.22; // 沈み込み量
-      c.root.position.set(0, 0.35 - dip, 0);
-      c.torso.rotation.x = Math.PI / 2; // うつ伏せ
+    c.leftUpperArm.rotation.set(0, 0, -0.2);
+    c.leftLowerArm.rotation.set(0, 0, 0);
+    c.rightUpperArm.rotation.set(0, 0, 0.2);
+    c.rightLowerArm.rotation.set(0, 0, 0);
 
-      c.leftUpperArm.position.set(-0.35, 0.45 - dip, -0.15);
-      c.leftUpperArm.rotation.set(Math.PI / 2 + p * 0.6, 0, -0.4);
-      c.leftLowerArm.position.set(-0.35, 0.18, -0.15);
-      c.leftLowerArm.rotation.set(Math.PI / 2, 0, 0);
+    c.leftUpperLeg.rotation.set(0, 0, 0);
+    c.leftLowerLeg.rotation.set(0, 0, 0);
+    c.rightUpperLeg.rotation.set(0, 0, 0);
+    c.rightLowerLeg.rotation.set(0, 0, 0);
 
-      c.rightUpperArm.position.set(0.35, 0.45 - dip, -0.15);
-      c.rightUpperArm.rotation.set(Math.PI / 2 + p * 0.6, 0, 0.4);
-      c.rightLowerArm.position.set(0.35, 0.18, -0.15);
-      c.rightLowerArm.rotation.set(Math.PI / 2, 0, 0);
+    if (exerciseId === 'pushup' || exerciseId === 'plank') {
+      // --- 腕立て伏せ / プランク (床でうつ伏せ水平) ---
+      const dip = exerciseId === 'pushup' ? p * 0.2 : 0;
+      c.body.position.set(0, 0.32 - dip, -0.4);
+      c.body.rotation.x = Math.PI / 2; // うつ伏せ
 
-      c.leftUpperLeg.position.set(-0.16, 0.28, 0.5);
-      c.leftUpperLeg.rotation.set(Math.PI / 2, 0, 0);
-      c.leftLowerLeg.position.set(-0.16, 0.28, 0.95);
-      c.leftLowerLeg.rotation.set(Math.PI / 2, 0, 0);
+      c.leftUpperArm.rotation.set(-0.2 - dip * 2, 0, -0.6);
+      c.leftLowerArm.rotation.set(-1.2 + dip * 2, 0, 0);
+      c.rightUpperArm.rotation.set(-0.2 - dip * 2, 0, 0.6);
+      c.rightLowerArm.rotation.set(-1.2 + dip * 2, 0, 0);
 
-      c.rightUpperLeg.position.set(0.16, 0.28, 0.5);
-      c.rightUpperLeg.rotation.set(Math.PI / 2, 0, 0);
-      c.rightLowerLeg.position.set(0.16, 0.28, 0.95);
-      c.rightLowerLeg.rotation.set(Math.PI / 2, 0, 0);
-    } else if (exerciseId === 'crunch') {
-      // --- クランチ / 腹筋 (仰向けで上体を丸める) ---
-      c.root.position.set(0, 0.15, 0);
-      c.torso.rotation.x = -Math.PI / 2 + p * 0.5; // 上体を起こす
-      c.torso.position.y = 0.1 + p * 0.15;
+      c.leftUpperLeg.rotation.set(0, 0, 0);
+      c.leftLowerLeg.rotation.set(0, 0, 0);
+      c.rightUpperLeg.rotation.set(0, 0, 0);
+      c.rightLowerLeg.rotation.set(0, 0, 0);
+    } else if (exerciseId === 'crunch' || exerciseId === 'dragon_flag') {
+      // --- クランチ / ドラゴンフラッグ (仰向けで上体または下肢を起こす) ---
+      c.body.position.set(0, 0.2, 0);
+      c.body.rotation.x = -Math.PI / 2; // 仰向け
 
-      c.leftUpperArm.position.set(-0.3, 0.25 + p * 0.15, -0.1);
-      c.leftUpperArm.rotation.set(-Math.PI / 3, 0, -0.5);
-      c.leftLowerArm.position.set(-0.25, 0.4 + p * 0.15, -0.2);
-
-      c.rightUpperArm.position.set(0.3, 0.25 + p * 0.15, -0.1);
-      c.rightUpperArm.rotation.set(-Math.PI / 3, 0, 0.5);
-      c.rightLowerArm.position.set(0.25, 0.4 + p * 0.15, -0.2);
-
-      // 膝を立てる
-      c.leftUpperLeg.position.set(-0.18, 0.35, 0.3);
-      c.leftUpperLeg.rotation.set(-Math.PI / 4, 0, 0);
-      c.leftLowerLeg.position.set(-0.18, 0.25, 0.6);
-      c.leftLowerLeg.rotation.set(Math.PI / 3, 0, 0);
-
-      c.rightUpperLeg.position.set(0.18, 0.35, 0.3);
-      c.rightUpperLeg.rotation.set(-Math.PI / 4, 0, 0);
-      c.rightLowerLeg.position.set(0.18, 0.25, 0.6);
-      c.rightLowerLeg.rotation.set(Math.PI / 3, 0, 0);
-    } else if (exerciseId === 'airsquat' || exerciseId === 'barbell_squat') {
-      // --- スクワット (深くしゃがみ込んで立ち上がる) ---
-      const isBarbell = exerciseId === 'barbell_squat';
-      if (isBarbell) {
-        c.barbell.visible = true;
+      if (exerciseId === 'crunch') {
+        c.torso.rotation.x = p * 0.5; // 上体を丸める
+        c.leftUpperLeg.rotation.set(-Math.PI / 4, 0, 0);
+        c.leftLowerLeg.rotation.set(Math.PI / 2.5, 0, 0);
+        c.rightUpperLeg.rotation.set(-Math.PI / 4, 0, 0);
+        c.rightLowerLeg.rotation.set(Math.PI / 2.5, 0, 0);
+      } else {
+        // ドラゴンフラッグ (下半身を棒にして持ち上げる)
+        c.hips.rotation.x = p * 0.9;
       }
 
-      const squatDepth = p * 0.5; // しゃがみ込み深さ
-      c.root.position.set(0, -squatDepth, 0);
-      c.torso.position.y = -squatDepth * 0.3;
-      c.torso.rotation.x = p * 0.25; // やや前傾
+      c.leftUpperArm.rotation.set(0, 0, -0.5);
+      c.leftLowerArm.rotation.set(-1.2, 0, 0);
+      c.rightUpperArm.rotation.set(0, 0, 0.5);
+      c.rightLowerArm.rotation.set(-1.2, 0, 0);
+    } else if (
+      exerciseId === 'airsquat' ||
+      exerciseId === 'barbell_squat' ||
+      exerciseId === 'bulgarian_squat'
+    ) {
+      // --- スクワット系 (深くしゃがみ込む) ---
+      const isBarbell = exerciseId === 'barbell_squat';
+      if (isBarbell) c.barbell.visible = true;
+
+      const squatDepth = p * 0.45;
+      c.body.position.y = -squatDepth;
+      c.torso.rotation.x = p * 0.25;
+
+      c.leftUpperLeg.rotation.set(-p * 1.3, 0, 0);
+      c.leftLowerLeg.rotation.set(p * 1.3, 0, 0);
+      c.rightUpperLeg.rotation.set(-p * 1.3, 0, 0);
+      c.rightLowerLeg.rotation.set(p * 1.3, 0, 0);
 
       if (isBarbell) {
-        c.barbell.position.set(0, 1.5 - squatDepth * 1.3, -0.05);
-        c.leftUpperArm.position.set(-0.35, 1.4 - squatDepth * 1.3, 0);
-        c.leftUpperArm.rotation.set(0, 0, -0.8);
-        c.rightUpperArm.position.set(0.35, 1.4 - squatDepth * 1.3, 0);
-        c.rightUpperArm.rotation.set(0, 0, 0.8);
+        c.barbell.position.set(0, 1.48 - squatDepth, 0);
+        c.leftUpperArm.rotation.set(0, 0, -1.2);
+        c.leftLowerArm.rotation.set(-1.5, 0, 0);
+        c.rightUpperArm.rotation.set(0, 0, 1.2);
+        c.rightLowerArm.rotation.set(-1.5, 0, 0);
       } else {
-        // 自重スクワットは両腕を前方に伸ばす
-        c.leftUpperArm.position.set(-0.3, 1.35 - squatDepth * 1.3, 0.25);
+        // 前方に腕を伸ばす
         c.leftUpperArm.rotation.set(Math.PI / 2, 0, 0);
-        c.rightUpperArm.position.set(0.3, 1.35 - squatDepth * 1.3, 0.25);
         c.rightUpperArm.rotation.set(Math.PI / 2, 0, 0);
       }
-
-      c.leftLowerArm.position.set(-0.3, 1.35 - squatDepth * 1.3, 0.55);
-      c.leftLowerArm.rotation.set(Math.PI / 2, 0, 0);
-      c.rightLowerArm.position.set(0.3, 1.35 - squatDepth * 1.3, 0.55);
-      c.rightLowerArm.rotation.set(Math.PI / 2, 0, 0);
-
-      // 脚の屈曲
-      c.leftUpperLeg.position.set(-0.2, 0.7 - squatDepth * 0.8, -p * 0.15);
-      c.leftUpperLeg.rotation.set(-p * 1.1, 0, 0);
-      c.leftLowerLeg.position.set(-0.2, 0.25, p * 0.1);
-      c.leftLowerLeg.rotation.set(p * 1.0, 0, 0);
-
-      c.rightUpperLeg.position.set(0.2, 0.7 - squatDepth * 0.8, -p * 0.15);
-      c.rightUpperLeg.rotation.set(-p * 1.1, 0, 0);
-      c.rightLowerLeg.position.set(0.2, 0.25, p * 0.1);
-      c.rightLowerLeg.rotation.set(p * 1.0, 0, 0);
     } else if (exerciseId === 'bench_press') {
-      // --- ベンチプレス (ベンチ台に寝てバーベルを上下) ---
+      // --- ベンチプレス (ベンチ台に横たわりバーベル挙上) ---
       c.bench.visible = true;
       c.barbell.visible = true;
 
-      c.root.position.set(0, 0, 0);
-      c.torso.position.set(0, -0.75, 0);
-      c.torso.rotation.x = -Math.PI / 2; // 仰向け
+      c.body.position.set(0, 0.55, 0);
+      c.body.rotation.x = -Math.PI / 2; // 仰向け
 
-      // バーベル挙上ストローク (胸元 0.8m 〜 挙上 1.25m)
-      const pressHeight = 0.8 + (1 - p) * 0.42;
+      // バーベルの上下動
+      const pressHeight = 0.8 + (1 - p) * 0.45;
       c.barbell.position.set(0, pressHeight, 0.1);
 
-      c.leftUpperArm.position.set(-0.35, pressHeight - 0.15, 0.1);
-      c.leftUpperArm.rotation.set(0, 0, -0.6 + p * 0.6);
-      c.leftLowerArm.position.set(-0.35, pressHeight, 0.1);
+      c.leftUpperArm.rotation.set(0, 0, -0.6 + p * 0.7);
       c.leftLowerArm.rotation.set(0, 0, 0);
-
-      c.rightUpperArm.position.set(0.35, pressHeight - 0.15, 0.1);
-      c.rightUpperArm.rotation.set(0, 0, 0.6 - p * 0.6);
-      c.rightLowerArm.position.set(0.35, pressHeight, 0.1);
+      c.rightUpperArm.rotation.set(0, 0, 0.6 - p * 0.7);
       c.rightLowerArm.rotation.set(0, 0, 0);
 
-      // 脚はベンチの両脇に降ろす
-      c.leftUpperLeg.position.set(-0.3, 0.45, 0.6);
-      c.leftUpperLeg.rotation.set(0.3, 0, -0.4);
-      c.leftLowerLeg.position.set(-0.3, 0.2, 0.6);
-      c.leftLowerLeg.rotation.set(0, 0, 0);
-
-      c.rightUpperLeg.position.set(0.3, 0.45, 0.6);
-      c.rightUpperLeg.rotation.set(0.3, 0, 0.4);
-      c.rightLowerLeg.position.set(0.3, 0.2, 0.6);
-      c.rightLowerLeg.rotation.set(0, 0, 0);
+      c.leftUpperLeg.rotation.set(0.4, 0, -0.4);
+      c.leftLowerLeg.rotation.set(0.5, 0, 0);
+      c.rightUpperLeg.rotation.set(0.4, 0, 0.4);
+      c.rightLowerLeg.rotation.set(0.5, 0, 0);
     } else if (exerciseId === 'deadlift') {
-      // --- デッドリフト (床からバーベルを引き上げて胸を張る) ---
+      // --- デッドリフト (床から引き上げる) ---
       c.barbell.visible = true;
-      const liftProgress = 1 - p; // 0=床, 1=引き上げ完了
+      const lift = 1 - p;
 
-      const hipHeight = 0.7 + liftProgress * 0.15;
-      c.torso.position.y = hipHeight - 0.85;
-      c.torso.rotation.x = (1 - liftProgress) * 0.6; // 前傾から直立へ
+      c.body.position.y = -lift * 0.2;
+      c.torso.rotation.x = lift * 0.6; // 前傾
 
-      const barbellY = 0.25 + liftProgress * 0.6;
-      c.barbell.position.set(0, barbellY, 0.35);
+      const barY = 0.25 + (1 - lift) * 0.55;
+      c.barbell.position.set(0, barY, 0.35);
 
-      c.leftUpperArm.position.set(-0.38, barbellY + 0.35, 0.2);
-      c.leftUpperArm.rotation.set(0.3, 0, 0);
-      c.leftLowerArm.position.set(-0.38, barbellY + 0.1, 0.3);
+      c.leftUpperArm.rotation.set(lift * 0.4, 0, 0);
+      c.rightUpperArm.rotation.set(lift * 0.4, 0, 0);
 
-      c.rightUpperArm.position.set(0.38, barbellY + 0.35, 0.2);
-      c.rightUpperArm.rotation.set(0.3, 0, 0);
-      c.rightLowerArm.position.set(0.38, barbellY + 0.1, 0.3);
-
-      c.leftUpperLeg.position.set(-0.2, 0.65, 0);
-      c.leftUpperLeg.rotation.set(-(1 - liftProgress) * 0.5, 0, 0);
-      c.leftLowerLeg.position.set(-0.2, 0.25, 0);
-
-      c.rightUpperLeg.position.set(0.2, 0.65, 0);
-      c.rightUpperLeg.rotation.set(-(1 - liftProgress) * 0.5, 0, 0);
-      c.rightLowerLeg.position.set(0.2, 0.25, 0);
+      c.leftUpperLeg.rotation.set(-lift * 0.5, 0, 0);
+      c.rightUpperLeg.rotation.set(-lift * 0.5, 0, 0);
     } else if (exerciseId === 'db_curl') {
-      // --- ダンベルアームカール (力強く巻き上げる) ---
+      // --- ダンベルアームカール (力こぶを巻き上げる) ---
       c.dumbbells.visible = true;
-      c.root.position.set(0, 0, 0);
-      c.torso.position.set(0, 0, 0);
+      const curl = p * 2.2;
 
-      const curlAngle = p * 2.2; // 肘の屈曲
-      c.leftUpperArm.position.set(-0.35, 1.25, 0);
-      c.leftUpperArm.rotation.set(0, 0, -0.15);
-      c.leftLowerArm.position.set(-0.35, 0.95 + p * 0.2, p * 0.2);
-      c.leftLowerArm.rotation.set(curlAngle, 0, 0);
+      c.leftUpperArm.rotation.set(0.1, 0, -0.15);
+      c.leftLowerArm.rotation.set(-curl, 0, 0);
+      c.rightUpperArm.rotation.set(0.1, 0, 0.15);
+      c.rightLowerArm.rotation.set(-curl, 0, 0);
 
-      c.rightUpperArm.position.set(0.35, 1.25, 0);
-      c.rightUpperArm.rotation.set(0, 0, 0.15);
-      c.rightLowerArm.position.set(0.35, 0.95 + p * 0.2, p * 0.2);
-      c.rightLowerArm.rotation.set(curlAngle, 0, 0);
-
-      c.dumbbells.position.set(0, 0.75 + p * 0.45, p * 0.25);
-
-      // 直立脚
-      c.leftUpperLeg.position.set(-0.18, 0.7, 0);
-      c.leftLowerLeg.position.set(-0.18, 0.25, 0);
-      c.rightUpperLeg.position.set(0.18, 0.7, 0);
-      c.rightLowerLeg.position.set(0.18, 0.25, 0);
-    } else if (exerciseId === 'pullup') {
-      // --- 懸垂 (バーにぶら下がって引き上げる) ---
+      c.dumbbells.position.set(0, 0.75 + p * 0.4, p * 0.22);
+    } else if (exerciseId === 'pullup' || exerciseId === 'inverted_row') {
+      // --- 懸垂 / 斜め懸垂 (ぶら下がって引き上げる) ---
       c.pullupBar.visible = true;
-      const pullHeight = 1.2 + p * 0.45;
-      c.root.position.set(0, pullHeight - 1.2, 0);
+      const pull = p * 0.45;
+      c.body.position.set(0, 0.15 + pull, 0);
 
-      c.leftUpperArm.position.set(-0.4, 2.1, 0);
-      c.leftUpperArm.rotation.set(0, 0, -0.9 + p * 0.7);
-      c.leftLowerArm.position.set(-0.45, 2.35, 0);
+      c.leftUpperArm.rotation.set(0, 0, -1.8 + p * 0.8);
+      c.leftLowerArm.rotation.set(-0.8 + p * 0.8, 0, 0);
+      c.rightUpperArm.rotation.set(0, 0, 1.8 - p * 0.8);
+      c.rightLowerArm.rotation.set(-0.8 + p * 0.8, 0, 0);
 
-      c.rightUpperArm.position.set(0.4, 2.1, 0);
-      c.rightUpperArm.rotation.set(0, 0, 0.9 - p * 0.7);
-      c.rightLowerArm.position.set(0.45, 2.35, 0);
-
-      // 脚を少し後ろでクロス
-      c.leftUpperLeg.position.set(-0.16, 0.65, -0.1);
+      // 脚を少しクロス
       c.leftUpperLeg.rotation.set(0.3, 0, 0);
-      c.leftLowerLeg.position.set(-0.16, 0.25, -0.25);
-      c.leftLowerLeg.rotation.set(0.7, 0, 0);
-
-      c.rightUpperLeg.position.set(0.16, 0.65, -0.1);
+      c.leftLowerLeg.rotation.set(0.6, 0, 0);
       c.rightUpperLeg.rotation.set(0.3, 0, 0);
-      c.rightLowerLeg.position.set(0.16, 0.25, -0.25);
-      c.rightLowerLeg.rotation.set(0.7, 0, 0);
+      c.rightLowerLeg.rotation.set(0.6, 0, 0);
+    } else if (exerciseId === 'overhead_press') {
+      // --- OHP (バーベル頭上プレス) ---
+      c.barbell.visible = true;
+      const pressY = 1.45 + p * 0.65;
+      c.barbell.position.set(0, pressY, 0.05);
+
+      c.leftUpperArm.rotation.set(0, 0, -0.8 - p * 0.8);
+      c.rightUpperArm.rotation.set(0, 0, 0.8 + p * 0.8);
+    } else if (exerciseId === 'dips') {
+      // --- ディップス ---
+      const dipY = p * 0.3;
+      c.body.position.y = 0.2 - dipY;
+      c.leftUpperArm.rotation.set(-dipY * 2, 0, -0.5);
+      c.rightUpperArm.rotation.set(-dipY * 2, 0, 0.5);
     } else {
-      // デフォルト（直立・待機ポーズ）
-      c.root.position.set(0, 0, 0);
-      c.leftUpperArm.position.set(-0.35, 1.25, 0);
-      c.leftUpperArm.rotation.set(0, 0, -0.15);
-      c.leftLowerArm.position.set(-0.35, 0.95, 0);
-      c.leftLowerArm.rotation.set(0, 0, 0);
-
-      c.rightUpperArm.position.set(0.35, 1.25, 0);
-      c.rightUpperArm.rotation.set(0, 0, 0.15);
-      c.rightLowerArm.position.set(0.35, 0.95, 0);
-      c.rightLowerArm.rotation.set(0, 0, 0);
-
-      c.leftUpperLeg.position.set(-0.18, 0.7, 0);
-      c.leftLowerLeg.position.set(-0.18, 0.25, 0);
-      c.rightUpperLeg.position.set(0.18, 0.7, 0);
-      c.rightLowerLeg.position.set(0.18, 0.25, 0);
+      // デフォルト待機ポーズ
+      c.leftUpperArm.rotation.set(0, 0, -0.2);
+      c.rightUpperArm.rotation.set(0, 0, 0.2);
     }
   };
 
-  // マウスドラッグでカメラ回転
-  const handleMouseDown = (e: React.MouseEvent) => {
-    isDraggingRef.current = true;
-    previousMousePositionRef.current = { x: e.clientX, y: e.clientY };
-  };
+  // 視点プリセット切り替え
+  const setPreset = (view: 'diagonal' | 'front' | 'side') => {
+    setActiveView(view);
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDraggingRef.current) return;
-    const deltaX = e.clientX - previousMousePositionRef.current.x;
-    const deltaY = e.clientY - previousMousePositionRef.current.y;
-
-    cameraRotationRef.current.theta += deltaX * 0.008;
-    cameraRotationRef.current.phi = Math.max(
-      0.1,
-      Math.min(Math.PI / 2 - 0.05, cameraRotationRef.current.phi - deltaY * 0.008)
-    );
-
-    previousMousePositionRef.current = { x: e.clientX, y: e.clientY };
-    updateCameraPosition();
-  };
-
-  const handleMouseUp = () => {
-    isDraggingRef.current = false;
-  };
-
-  // タッチ操作対応
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      isDraggingRef.current = true;
-      previousMousePositionRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDraggingRef.current || e.touches.length !== 1) return;
-    const deltaX = e.touches[0].clientX - previousMousePositionRef.current.x;
-    const deltaY = e.touches[0].clientY - previousMousePositionRef.current.y;
-
-    cameraRotationRef.current.theta += deltaX * 0.01;
-    cameraRotationRef.current.phi = Math.max(
-      0.1,
-      Math.min(Math.PI / 2 - 0.05, cameraRotationRef.current.phi - deltaY * 0.01)
-    );
-
-    previousMousePositionRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    updateCameraPosition();
-  };
-
-  // プリセットカメラ視点切り替え
-  const setPresetAngle = (preset: 'front' | 'side' | 'isometric') => {
-    setCameraAngle(preset);
-    if (preset === 'front') {
-      cameraRotationRef.current = { theta: 0, phi: 0.25, radius: 4.5 };
-    } else if (preset === 'side') {
-      cameraRotationRef.current = { theta: Math.PI / 2, phi: 0.3, radius: 4.8 };
+    if (view === 'front') {
+      camera.position.set(0, 1.6, 4.2);
+      controls.target.set(0, 1.05, 0);
+    } else if (view === 'side') {
+      camera.position.set(4.2, 1.6, 0);
+      controls.target.set(0, 1.05, 0);
     } else {
-      cameraRotationRef.current = { theta: 0.35, phi: 0.35, radius: 4.8 };
+      camera.position.set(2.5, 2.2, 4.0);
+      controls.target.set(0, 1.05, 0);
     }
-    updateCameraPosition();
+    controls.update();
   };
 
   return (
     <div className="relative w-full h-[520px] sm:h-[600px] rounded-3xl overflow-hidden shadow-2xl border border-slate-800 bg-slate-950 select-none">
-      {/* 3D WebGL キャンバス */}
-      <div
-        ref={containerRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleMouseUp}
-      />
+      {/* 3D キャンバス */}
+      <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
       {/* カメラアングル切り替えボタン */}
-      <div className="absolute top-4 right-4 flex bg-slate-900/80 backdrop-blur-md p-1 rounded-xl border border-slate-800 text-xs">
+      <div className="absolute top-4 right-4 flex bg-slate-900/80 backdrop-blur-md p-1 rounded-2xl border border-slate-800 text-xs shadow-xl">
         <button
-          onClick={() => setPresetAngle('isometric')}
-          className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-            cameraAngle === 'isometric'
-              ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+          onClick={() => setPreset('diagonal')}
+          className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+            activeView === 'diagonal'
+              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
               : 'text-slate-400 hover:text-white'
           }`}
         >
           斜め (3D)
         </button>
         <button
-          onClick={() => setPresetAngle('front')}
-          className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-            cameraAngle === 'front'
-              ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+          onClick={() => setPreset('front')}
+          className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+            activeView === 'front'
+              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
               : 'text-slate-400 hover:text-white'
           }`}
         >
           正面
         </button>
         <button
-          onClick={() => setPresetAngle('side')}
-          className={`px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer ${
-            cameraAngle === 'side'
-              ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+          onClick={() => setPreset('side')}
+          className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+            activeView === 'side'
+              ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -782,15 +678,15 @@ export const ThreeGymCanvas: React.FC<ThreeGymCanvasProps> = ({
         </button>
       </div>
 
-      {/* 画面ドラッグガイド */}
-      <div className="absolute top-4 left-4 bg-slate-900/70 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-slate-800/80 text-[11px] text-slate-300 flex items-center gap-1.5 pointer-events-none">
+      {/* ガイダンスチップ */}
+      <div className="absolute top-4 left-4 bg-slate-900/75 backdrop-blur-md px-3.5 py-1.5 rounded-2xl border border-slate-800/80 text-[11px] text-slate-300 flex items-center gap-1.5 pointer-events-none shadow-lg">
         <span>🎮</span>
-        <span>画面ドラッグで360°回転鑑賞</span>
+        <span>ドラッグで360°回転 / スクロールでズーム</span>
       </div>
 
-      {/* 種目名＆パンプバッジ */}
+      {/* トレーニング中バッジ */}
       <div className="absolute bottom-4 left-4 pointer-events-none">
-        <div className="bg-slate-900/85 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-700/80 shadow-xl">
+        <div className="bg-slate-900/85 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-slate-700/80 shadow-2xl">
           <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider">
             NOW TRAINING
           </div>

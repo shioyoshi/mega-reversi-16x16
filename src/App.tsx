@@ -11,6 +11,9 @@ import {
 import {
   defaultProfile,
   createInitialGameState,
+  initialExercises,
+  initialUpgrades,
+  initialAchievements,
 } from './data/initialData';
 import {
   calculatePlayerLevel,
@@ -29,15 +32,37 @@ import { AchievementsModal } from './components/AchievementsModal';
 import { WorkoutSummary } from './components/WorkoutSummary';
 import { FloatingNumbers } from './components/FloatingNumbers';
 
-const STORAGE_KEY = 'pump_hero_game_state_v1';
+const STORAGE_KEY = 'pump_hero_game_state_v2'; // キーをv2に上げてクリーンに移行
 
 export const App: React.FC = () => {
-  // ゲームステートのロード
+  // 安全なゲームステートのロード＆マイグレーション
   const [state, setState] = useState<GameState>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pump_hero_game_state_v1');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        const fallback = createInitialGameState(parsed.profile || defaultProfile);
+
+        // 種目の欠損補完
+        const mergedExercises = fallback.exercises.map((fEx) => {
+          const found = parsed.exercises?.find((pEx: Exercise) => pEx.id === fEx.id);
+          return found ? { ...fEx, ...found } : fEx;
+        });
+
+        // アップグレードの欠損補完
+        const mergedUpgrades = fallback.upgrades.map((fUp) => {
+          const found = parsed.upgrades?.find((pUp: UpgradeItem) => pUp.id === fUp.id);
+          return found ? { ...fUp, ...found } : fUp;
+        });
+
+        return {
+          ...fallback,
+          ...parsed,
+          profile: parsed.profile || defaultProfile,
+          exercises: mergedExercises.length > 0 ? mergedExercises : fallback.exercises,
+          upgrades: mergedUpgrades.length > 0 ? mergedUpgrades : fallback.upgrades,
+          achievements: parsed.achievements || fallback.achievements,
+        };
       }
     } catch (e) {
       console.error('Failed to load saved state:', e);
@@ -67,12 +92,18 @@ export const App: React.FC = () => {
 
   // ステートの自動保存
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('Save error:', e);
+    }
   }, [state]);
 
-  // 現在の選択種目オブジェクト
-  const currentExercise =
-    state.exercises.find((e) => e.id === currentExerciseId) || state.exercises[0];
+  // 現在の選択種目オブジェクト（絶対にundefinedにならないようフォールバック）
+  const currentExercise: Exercise =
+    state.exercises.find((e) => e.id === currentExerciseId) ||
+    state.exercises[0] ||
+    initialExercises[0];
 
   // 実績チェック
   const checkAchievements = (currentState: GameState) => {
@@ -312,7 +343,6 @@ export const App: React.FC = () => {
         lastSavedTimestamp: Date.now(),
       };
 
-      // 浮遊テキスト
       const posX = clientX ?? window.innerWidth / 2 + (Math.random() * 80 - 40);
       const posY = clientY ?? window.innerHeight / 2 - 40;
       const newFloat: FloatingText = {
@@ -334,11 +364,10 @@ export const App: React.FC = () => {
     });
   };
 
-  // キーボード連打対応 (スペースキー)
+  // キーボード操作 (Space連打)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !e.repeat) {
-        // 入力フォーム等フォーカス中は無効化
         if (
           document.activeElement?.tagName === 'INPUT' ||
           document.activeElement?.tagName === 'SELECT'
@@ -468,6 +497,7 @@ export const App: React.FC = () => {
   // リセット
   const handleResetGame = () => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('pump_hero_game_state_v1');
     const fresh = createInitialGameState(defaultProfile);
     setState(fresh);
     setIsStatsOpen(false);
@@ -488,7 +518,7 @@ export const App: React.FC = () => {
       <FloatingNumbers floatingTexts={floatingTexts} />
 
       {/* ================= 上部 HUD (ゲーム風ステータスバー) ================= */}
-      <header className="z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5">
+      <header className="z-30 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           {/* プレイヤー情報 ＆ レベル */}
           <div className="flex items-center gap-3">
@@ -590,7 +620,7 @@ export const App: React.FC = () => {
 
       {/* ================= メイン 3D ゲームビューポート ＆ コントロール ================= */}
       <main className="max-w-7xl mx-auto px-4 py-3 w-full flex-1 flex flex-col space-y-3">
-        {/* パンプ感ゲージ ＆ 疲労度バー (アーケードゲーム風HUD) */}
+        {/* パンプ感ゲージ ＆ 疲労度バー */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* PUMP GAUGE */}
           <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 px-3.5 shadow-xl">
@@ -674,7 +704,7 @@ export const App: React.FC = () => {
         </div>
 
         {/* 3D 空間キャンバス */}
-        <div className="relative w-full flex-1">
+        <div className="relative w-full flex-1 min-h-[500px]">
           <ThreeGymCanvas
             currentExercise={currentExercise}
             muscleStats={state.muscleStats}
@@ -711,14 +741,14 @@ export const App: React.FC = () => {
         {/* 種目セレクトカルーセル */}
         <ExerciseCarousel
           exercises={state.exercises}
-          currentExerciseId={currentExerciseId}
+          currentExerciseId={currentExercise.id}
           onSelectExercise={setCurrentExerciseId}
           onUpgradeLevel={handleUpgradeExercise}
           availableExp={state.totalMuscleExp}
         />
       </main>
 
-      {/* ================= モーダル群 (ショップ、アナトミー、実績、カルテ、設定) ================= */}
+      {/* ================= モーダル群 ================= */}
       {/* ニュートリション＆施設ショップ モーダル */}
       {isShopOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
