@@ -60,13 +60,11 @@ export function getFlippableDiscs(
       if (board[r][c] === opponent) {
         currentRay.push({ row: r, col: c });
       } else if (board[r][c] === color) {
-        // 自色の石に到達 -> 間にあった相手の石をすべて裏返せる
         if (currentRay.length > 0) {
           flippable.push(...currentRay);
         }
         break;
       } else {
-        // 空マス -> 挟めない
         break;
       }
       r += dir.r;
@@ -144,18 +142,23 @@ export function getAllCompletedBlocks(
 
 /**
  * 特別ルール: 2x2 メガブロックによる反転処理
- * 「縦横1/8ずつで区切られた 2x2 の4マスがすべて同じ色になって、他の所にも同じ色の完成ブロックがあった場合、
- * 　その間にあるブロック内の相手の石を普通のオセロのように挟んで裏返す」
+ * 【重要】今回の手によって「新たに完成した 2x2 ブロック」のみを起点として挟み込み判定を行う！
+ * 既に完成していたブロックから毎ターン勝手に再発動することはない。
  */
-export function evaluateMegaBlockReversals(
+export function evaluateNewlyCompletedBlockReversals(
   board: BoardState,
-  color: PlayerColor
+  color: PlayerColor,
+  newlyCompletedBlocks: BlockPosition[]
 ): { flippedPositions: Position[]; completedBlocks: BlockPosition[] } {
+  if (newlyCompletedBlocks.length === 0) {
+    const { black, white } = getAllCompletedBlocks(board);
+    return { flippedPositions: [], completedBlocks: color === 'black' ? black : white };
+  }
+
   const opponent: PlayerColor = color === 'black' ? 'white' : 'black';
   const flipped: Position[] = [];
   const flippedSet = new Set<string>();
 
-  // ブロックグリッド (8x8) 上での8方向ベクトル
   const BLOCK_DIRECTIONS = [
     { dr: -1, dc: -1 },
     { dr: -1, dc: 0 },
@@ -175,77 +178,63 @@ export function evaluateMegaBlockReversals(
       if (dom) {
         blockGrid[bR * BLOCKS_PER_SIDE + bC] = dom;
       } else {
-        // 相手の石が1個以上あるかチェック
         let hasOpp = false;
-        let hasAny = false;
         const sR = bR * BLOCK_SIZE;
         const sC = bC * BLOCK_SIZE;
         for (let dr = 0; dr < BLOCK_SIZE; dr++) {
           for (let dc = 0; dc < BLOCK_SIZE; dc++) {
-            if (board[sR + dr][sC + dc] !== null) hasAny = true;
             if (board[sR + dr][sC + dc] === opponent) hasOpp = true;
           }
         }
-        if (hasOpp) {
-          blockGrid[bR * BLOCKS_PER_SIDE + bC] = 'has_opponent';
-        } else if (hasAny) {
-          blockGrid[bR * BLOCKS_PER_SIDE + bC] = 'empty';
-        } else {
-          blockGrid[bR * BLOCKS_PER_SIDE + bC] = 'empty';
-        }
+        blockGrid[bR * BLOCKS_PER_SIDE + bC] = hasOpp ? 'has_opponent' : 'empty';
       }
     }
   }
 
-  // 自色の完成ブロックを起点に、各方向へスキャン
-  for (let bR = 0; bR < BLOCKS_PER_SIDE; bR++) {
-    for (let bC = 0; bC < BLOCKS_PER_SIDE; bC++) {
-      if (blockGrid[bR * BLOCKS_PER_SIDE + bC] === color) {
-        // この完成ブロックから8方向を見る
-        for (const dir of BLOCK_DIRECTIONS) {
-          let currR = bR + dir.dr;
-          let currC = bC + dir.dc;
-          const blocksInBetween: BlockPosition[] = [];
+  // 今回新しく完成したブロックのみを起点にスキャン！
+  for (const newBlock of newlyCompletedBlocks) {
+    const bR = newBlock.blockRow;
+    const bC = newBlock.blockCol;
 
-          while (
-            currR >= 0 &&
-            currR < BLOCKS_PER_SIDE &&
-            currC >= 0 &&
-            currC < BLOCKS_PER_SIDE
-          ) {
-            const status = blockGrid[currR * BLOCKS_PER_SIDE + currC];
+    for (const dir of BLOCK_DIRECTIONS) {
+      let currR = bR + dir.dr;
+      let currC = bC + dir.dc;
+      const blocksInBetween: BlockPosition[] = [];
 
-            if (status === opponent || status === 'has_opponent') {
-              // 相手の石が存在するブロック -> 挟む対象候補
-              blocksInBetween.push({ blockRow: currR, blockCol: currC });
-            } else if (status === color) {
-              // 反対側の自色完成ブロックに到達！
-              if (blocksInBetween.length > 0) {
-                // 間にあったブロック内の相手の石をすべて反転リストに追加
-                for (const b of blocksInBetween) {
-                  const baseR = b.blockRow * BLOCK_SIZE;
-                  const baseC = b.blockCol * BLOCK_SIZE;
-                  for (let dr = 0; dr < BLOCK_SIZE; dr++) {
-                    for (let dc = 0; dc < BLOCK_SIZE; dc++) {
-                      const posKey = `${baseR + dr},${baseC + dc}`;
-                      if (board[baseR + dr][baseC + dc] === opponent && !flippedSet.has(posKey)) {
-                        flippedSet.add(posKey);
-                        flipped.push({ row: baseR + dr, col: baseC + dc });
-                      }
-                    }
+      while (
+        currR >= 0 &&
+        currR < BLOCKS_PER_SIDE &&
+        currC >= 0 &&
+        currC < BLOCKS_PER_SIDE
+      ) {
+        const status = blockGrid[currR * BLOCKS_PER_SIDE + currC];
+
+        if (status === opponent || status === 'has_opponent') {
+          blocksInBetween.push({ blockRow: currR, blockCol: currC });
+        } else if (status === color) {
+          // 直線上の別の自色完成ブロックに到達！
+          if (blocksInBetween.length > 0) {
+            for (const b of blocksInBetween) {
+              const baseR = b.blockRow * BLOCK_SIZE;
+              const baseC = b.blockCol * BLOCK_SIZE;
+              for (let dr = 0; dr < BLOCK_SIZE; dr++) {
+                for (let dc = 0; dc < BLOCK_SIZE; dc++) {
+                  const posKey = `${baseR + dr},${baseC + dc}`;
+                  if (board[baseR + dr][baseC + dc] === opponent && !flippedSet.has(posKey)) {
+                    flippedSet.add(posKey);
+                    flipped.push({ row: baseR + dr, col: baseC + dc });
                   }
                 }
               }
-              break;
-            } else {
-              // 空ブロックなどで途切れた
-              break;
             }
-
-            currR += dir.dr;
-            currC += dir.dc;
           }
+          break;
+        } else {
+          break;
         }
+
+        currR += dir.dr;
+        currC += dir.dc;
       }
     }
   }
@@ -262,7 +251,7 @@ export function evaluateMegaBlockReversals(
 }
 
 /**
- * 1手を適用するメイン関数 (通常反転 + 特別ルールメガ反転)
+ * 1手を適用するメイン関数 (通常反転 + 今回新規に完成した2x2ブロックによる特別反転)
  */
 export function makeMove(
   board: BoardState,
@@ -272,25 +261,36 @@ export function makeMove(
   const normalFlips = getFlippableDiscs(board, pos, color);
   if (normalFlips.length === 0) return null;
 
+  // 着手前の自色完成ブロック一覧を記録
+  const beforeCompleted = getAllCompletedBlocks(board)[color];
+  const beforeKeySet = new Set(
+    beforeCompleted.map((b) => `${b.blockRow},${b.blockCol}`)
+  );
+
   // 1. 通常の石配置＆反転
   board[pos.row][pos.col] = color;
   for (const p of normalFlips) {
     board[p.row][p.col] = color;
   }
 
-  // 2. 特別ルール: 2x2 メガブロック反転の評価
-  // 連鎖反転（反転によって新たにブロックが完成した場合の波及）も最大3連鎖まで処理
+  // 2. 着手後に新しく完成した 2x2 ブロックを特定
+  const afterCompleted = getAllCompletedBlocks(board)[color];
+  const newlyCompleted = afterCompleted.filter(
+    (b) => !beforeKeySet.has(`${b.blockRow},${b.blockCol}`)
+  );
+
+  // 3. 新規完成ブロックのみを起点に特別反転を発動
   const allMegaFlips: Position[] = [];
-  let currentChain = 0;
-  let latestCompleted: BlockPosition[] = [];
+  let latestCompleted = afterCompleted;
 
-  while (currentChain < 3) {
-    const { flippedPositions, completedBlocks } = evaluateMegaBlockReversals(board, color);
-    if (flippedPositions.length === 0) break;
-
+  if (newlyCompleted.length > 0) {
+    const { flippedPositions, completedBlocks } = evaluateNewlyCompletedBlockReversals(
+      board,
+      color,
+      newlyCompleted
+    );
     allMegaFlips.push(...flippedPositions);
     latestCompleted = completedBlocks;
-    currentChain++;
   }
 
   return {

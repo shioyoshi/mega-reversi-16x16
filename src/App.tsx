@@ -47,10 +47,9 @@ export const App: React.FC = () => {
   const [showHints, setShowHints] = useState(true);
   const [isMuted, setIsMuted] = useState(soundManager.getMuted());
 
-  // メガ反転トーストメッセージ
+  // トーストメッセージ
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // 現在の合法手
   const validMoves = getValidMoves(board, turn);
   const stats = getBoardStats(board);
 
@@ -84,16 +83,16 @@ export const App: React.FC = () => {
         soundManager.playFlipPiece(moveResult.flippedNormal.length);
       }
 
-      // 特別ルール: メガブロック反転発生時
+      // 特別ルール: 今回新たに2x2を完成させたことによるメガ反転
       if (moveResult.flippedMega.length > 0) {
         soundManager.playMegaReversal();
         confetti({
-          particleCount: 70,
-          spread: 70,
+          particleCount: 75,
+          spread: 80,
           origin: { y: 0.6 },
         });
         setToastMessage(
-          `⚡ 2×2ブロック連鎖反転！ ${moveResult.flippedMega.length}マスを挟み撃ち！`
+          `⚡ 2×2完成！ 直線上の敵石 ${moveResult.flippedMega.length}マスを一網打尽！`
         );
         setTimeout(() => setToastMessage(null), 3000);
       }
@@ -149,7 +148,7 @@ export const App: React.FC = () => {
     executeMove({ row: r, col: c }, turn);
   };
 
-  // CPU思考ターン
+  // CPUターン
   useEffect(() => {
     if (isGameOver || mode === 'pvp') return;
 
@@ -170,7 +169,7 @@ export const App: React.FC = () => {
           }
         }
         setIsAiThinking(false);
-      }, 500);
+      }, 450);
 
       return () => clearTimeout(timer);
     }
@@ -211,8 +210,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans select-none pb-8">
-      {/* スコア ＆ コントロールヘッダー */}
+    <div className="min-h-screen bg-[#0d131f] text-slate-100 flex flex-col font-sans select-none pb-8">
+      {/* スコア ＆ 操作ヘッダー */}
       <GameScoreHeader
         stats={gameStats}
         mode={mode}
@@ -231,17 +230,17 @@ export const App: React.FC = () => {
         isAiThinking={isAiThinking}
       />
 
-      {/* スタイリッシュなトースト通知 */}
+      {/* トースト通知 */}
       {toastMessage && (
         <div className="w-full max-w-md mx-auto px-4 mt-2 animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="bg-slate-800 text-amber-300 border border-amber-400/30 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-lg">
+          <div className="bg-slate-900 text-amber-300 border border-amber-400/40 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-lg">
             {toastMessage}
           </div>
         </div>
       )}
 
       {/* 盤面 */}
-      <main className="max-w-2xl mx-auto px-3 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
+      <main className="max-w-2xl mx-auto px-2 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
         <ReversiBoard
           board={board}
           validMoves={validMoves}
