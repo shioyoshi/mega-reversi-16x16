@@ -16,14 +16,14 @@ import {
   calculatePlayerLevel,
   estimateInitialStats,
   calculateCurrent1RM,
+  formatNumber,
 } from './utils/calc';
 import { soundManager } from './utils/audio';
 
-import { Header } from './components/Header';
+import { ThreeGymCanvas } from './components/ThreeGymCanvas';
+import { ExerciseCarousel } from './components/ExerciseCarousel';
 import { ProfileModal } from './components/ProfileModal';
 import { MuscleMap } from './components/MuscleMap';
-import { PumpBar } from './components/PumpBar';
-import { ExerciseCard } from './components/ExerciseCard';
 import { NutritionShop } from './components/NutritionShop';
 import { AchievementsModal } from './components/AchievementsModal';
 import { WorkoutSummary } from './components/WorkoutSummary';
@@ -37,9 +37,7 @@ export const App: React.FC = () => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        const parsed = JSON.parse(saved);
-        // 新規項目等の補完
-        return parsed;
+        return JSON.parse(saved);
       }
     } catch (e) {
       console.error('Failed to load saved state:', e);
@@ -47,16 +45,21 @@ export const App: React.FC = () => {
     return createInitialGameState(defaultProfile);
   });
 
-  // UIモーダル制御
+  // 現在選択中の種目ID
+  const [currentExerciseId, setCurrentExerciseId] = useState<string>('pushup');
+
+  // レップアニメーショントリガー
+  const [repTrigger, setRepTrigger] = useState<number>(0);
+  const [isPressingRep, setIsPressingRep] = useState(false);
+
+  // UIモーダル＆サイドパネル制御
   const [isProfileOpen, setIsProfileOpen] = useState(!state.profile.isInitialized);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
+  const [isShopOpen, setIsShopOpen] = useState(false);
+  const [isAnatomyOpen, setIsAnatomyOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(soundManager.getMuted());
-
-  // フィルター＆タブ
   const [selectedMuscle, setSelectedMuscle] = useState<MuscleGroup | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'bodyweight' | 'gym'>('all');
-  const [activeTab, setActiveTab] = useState<'exercises' | 'shop'>('exercises');
 
   // 浮遊エフェクト
   const [floatingTexts, setFloatingTexts] = useState<FloatingText[]>([]);
@@ -67,6 +70,10 @@ export const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
+  // 現在の選択種目オブジェクト
+  const currentExercise =
+    state.exercises.find((e) => e.id === currentExerciseId) || state.exercises[0];
+
   // 実績チェック
   const checkAchievements = (currentState: GameState) => {
     let newlyUnlocked = false;
@@ -75,9 +82,9 @@ export const App: React.FC = () => {
         newlyUnlocked = true;
         soundManager.playLevelUp();
         confetti({
-          particleCount: 50,
-          spread: 60,
-          origin: { y: 0.8 },
+          particleCount: 60,
+          spread: 70,
+          origin: { y: 0.7 },
         });
         return {
           ...ach,
@@ -130,9 +137,9 @@ export const App: React.FC = () => {
       if (canUnlock) {
         soundManager.playLevelUp();
         confetti({
-          particleCount: 40,
-          spread: 50,
-          origin: { y: 0.7 },
+          particleCount: 45,
+          spread: 55,
+          origin: { y: 0.6 },
         });
         return { ...ex, unlocked: true };
       }
@@ -154,7 +161,6 @@ export const App: React.FC = () => {
           upgrades,
         } = prev;
 
-        // 放置EXP計算
         const passivePerSec = upgrades.reduce(
           (sum, u) => sum + u.passiveExpPerSec * u.ownedCount,
           0
@@ -165,14 +171,12 @@ export const App: React.FC = () => {
           lifetimeMuscleExp += passivePerSec;
         }
 
-        // 自然疲労回復 (毎秒少しずつ回復)
         const recoveryRate = upgrades.reduce(
           (mult, u) => mult * Math.pow(u.fatigueRecoveryMultiplier, u.ownedCount),
           1.0
         );
         fatigue = Math.max(0, fatigue - 0.5 * recoveryRate);
 
-        // 超パンプモードのカウントダウン
         if (isPumpMode) {
           pumpTimeRemaining -= 1;
           if (pumpTimeRemaining <= 0) {
@@ -181,8 +185,7 @@ export const App: React.FC = () => {
             pumpGauge = 0;
           }
         } else {
-          // 通常時は放置するとパンプ感は徐々に減少
-          pumpGauge = Math.max(0, pumpGauge - 0.4);
+          pumpGauge = Math.max(0, pumpGauge - 0.35);
         }
 
         const newPlayerLevel = calculatePlayerLevel(lifetimeMuscleExp);
@@ -199,7 +202,6 @@ export const App: React.FC = () => {
           lastSavedTimestamp: Date.now(),
         };
 
-        // アンロック＆実績判定
         nextState.exercises = checkExerciseUnlocks(nextState);
         nextState = checkAchievements(nextState);
 
@@ -210,8 +212,15 @@ export const App: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // 1レップ実行
-  const handlePerformRep = (exercise: Exercise, e: React.MouseEvent<HTMLButtonElement>) => {
+  // 1レップ実行 (3Dアニメーション + サウンド + 経験値獲得)
+  const handlePerformRep = (clientX?: number, clientY?: number) => {
+    if (!currentExercise.unlocked) return;
+
+    soundManager.playRep(currentExercise.category === 'gym');
+    setRepTrigger((prev) => prev + 1);
+    setIsPressingRep(true);
+    setTimeout(() => setIsPressingRep(false), 140);
+
     setState((prev) => {
       let {
         totalMuscleExp,
@@ -227,7 +236,6 @@ export const App: React.FC = () => {
         upgrades,
       } = prev;
 
-      // クリック倍率の計算
       const clickMultiplier = upgrades.reduce(
         (mult, u) => mult * Math.pow(u.clickMultiplier, u.ownedCount),
         1.0
@@ -237,36 +245,37 @@ export const App: React.FC = () => {
       const fatigueFactor = fatigue > 80 ? 0.7 : 1.0;
 
       const gainedExp = Math.round(
-        exercise.baseExp * (1 + (exercise.level - 1) * 0.4) * clickMultiplier * pumpFactor * fatigueFactor
+        currentExercise.baseExp *
+          (1 + (currentExercise.level - 1) * 0.4) *
+          clickMultiplier *
+          pumpFactor *
+          fatigueFactor
       );
 
       totalMuscleExp += gainedExp;
       lifetimeMuscleExp += gainedExp;
       totalReps += 1;
 
-      // 挙上負荷重量
       const effectiveLoadKg =
-        exercise.category === 'bodyweight'
-          ? Math.round(prev.profile.weight * (exercise.currentWeight / 100))
-          : exercise.currentWeight;
+        currentExercise.category === 'bodyweight'
+          ? Math.round(prev.profile.weight * (currentExercise.currentWeight / 100))
+          : currentExercise.currentWeight;
       totalLiftedKg += effectiveLoadKg;
 
-      // 部位筋力の微小成長 (主要部位+0.15, 副次部位+0.05)
       const newMuscleStats = { ...muscleStats };
-      newMuscleStats[exercise.primaryMuscle] = Math.round((newMuscleStats[exercise.primaryMuscle] + 0.15) * 100) / 100;
-      exercise.secondaryMuscles?.forEach((m) => {
+      newMuscleStats[currentExercise.primaryMuscle] =
+        Math.round((newMuscleStats[currentExercise.primaryMuscle] + 0.15) * 100) / 100;
+      currentExercise.secondaryMuscles?.forEach((m) => {
         newMuscleStats[m] = Math.round((newMuscleStats[m] + 0.05) * 100) / 100;
       });
 
-      // 疲労度蓄積 (パンプモード中は疲労ゼロ！)
       if (!isPumpMode) {
         fatigue = Math.min(100, fatigue + 1.8);
       }
 
-      // パンプゲージの上昇
       if (!isPumpMode) {
         const creatineBonus = upgrades.find((u) => u.id === 'creatine')?.ownedCount || 0;
-        const pumpIncrement = 6 * (1 + creatineBonus * 0.3);
+        const pumpIncrement = 7 * (1 + creatineBonus * 0.3);
         pumpGauge = Math.min(100, pumpGauge + pumpIncrement);
 
         if (pumpGauge >= 100) {
@@ -274,16 +283,15 @@ export const App: React.FC = () => {
           pumpTimeRemaining = 15;
           soundManager.playPumpMode();
           confetti({
-            particleCount: 80,
+            particleCount: 90,
             spread: 90,
-            origin: { y: 0.6 },
+            origin: { y: 0.5 },
           });
         }
       }
 
-      // レップ数の記録
       const updatedExercises = exercises.map((item) =>
-        item.id === exercise.id ? { ...item, repsCompleted: item.repsCompleted + 1 } : item
+        item.id === currentExercise.id ? { ...item, repsCompleted: item.repsCompleted + 1 } : item
       );
 
       const newPlayerLevel = calculatePlayerLevel(lifetimeMuscleExp);
@@ -304,13 +312,14 @@ export const App: React.FC = () => {
         lastSavedTimestamp: Date.now(),
       };
 
-      // 浮遊テキストの追加
-      const rect = e.currentTarget.getBoundingClientRect();
+      // 浮遊テキスト
+      const posX = clientX ?? window.innerWidth / 2 + (Math.random() * 80 - 40);
+      const posY = clientY ?? window.innerHeight / 2 - 40;
       const newFloat: FloatingText = {
         id: floatingIdRef.current++,
-        x: rect.left + rect.width / 2 - 20 + (Math.random() * 40 - 20),
-        y: rect.top - 10,
-        text: `+${gainedExp} EXP! 💪`,
+        x: posX,
+        y: posY,
+        text: `+${gainedExp} EXP! 🔥`,
         color: isPumpMode ? '#f59e0b' : '#38bdf8',
       };
       setFloatingTexts((f) => [...f.slice(-12), newFloat]);
@@ -325,16 +334,36 @@ export const App: React.FC = () => {
     });
   };
 
+  // キーボード連打対応 (スペースキー)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat) {
+        // 入力フォーム等フォーカス中は無効化
+        if (
+          document.activeElement?.tagName === 'INPUT' ||
+          document.activeElement?.tagName === 'SELECT'
+        ) {
+          return;
+        }
+        e.preventDefault();
+        handlePerformRep();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentExercise]);
+
   // 種目レベルアップ
   const handleUpgradeExercise = (exercise: Exercise) => {
     if (state.totalMuscleExp < exercise.upgradeCostExp) return;
 
+    soundManager.playLevelUp();
     setState((prev) => {
       const newTotalExp = prev.totalMuscleExp - exercise.upgradeCostExp;
       const newLevel = exercise.level + 1;
       const nextCost = Math.round(exercise.upgradeCostExp * 1.6);
 
-      // ジム種目なら重量も少しUP
       const newWeight =
         exercise.category === 'gym'
           ? exercise.currentWeight + (exercise.id === 'bench_press' ? 5 : 2.5)
@@ -364,11 +393,12 @@ export const App: React.FC = () => {
     });
   };
 
-  // サプリメント・ギア・施設購入
+  // ショップ購入
   const handleBuyUpgrade = (upgrade: UpgradeItem) => {
     const currentCost = Math.round(upgrade.cost * Math.pow(1.25, upgrade.ownedCount));
     if (state.totalMuscleExp < currentCost) return;
 
+    soundManager.playPurchase();
     setState((prev) => {
       const newTotalExp = prev.totalMuscleExp - currentCost;
       const isGymCard = upgrade.id === 'gym_membership';
@@ -399,18 +429,19 @@ export const App: React.FC = () => {
     });
   };
 
-  // 休息（疲労回復）
+  // 休息・プロテイン回復
   const handleRest = () => {
+    soundManager.playRecovery();
     setState((prev) => ({
       ...prev,
       fatigue: Math.max(0, prev.fatigue - 20),
     }));
   };
 
-  // プロテイン摂取（全快）
   const shakeCost = 30;
   const handleDrinkShake = () => {
     if (state.totalMuscleExp < shakeCost || state.fatigue <= 0) return;
+    soundManager.playRecovery();
     setState((prev) => ({
       ...prev,
       totalMuscleExp: prev.totalMuscleExp - shakeCost,
@@ -434,7 +465,7 @@ export const App: React.FC = () => {
     setIsProfileOpen(false);
   };
 
-  // ゲームデータのリセット
+  // リセット
   const handleResetGame = () => {
     localStorage.removeItem(STORAGE_KEY);
     const fresh = createInitialGameState(defaultProfile);
@@ -443,190 +474,297 @@ export const App: React.FC = () => {
     setIsProfileOpen(true);
   };
 
-  // 絞り込み後の種目リスト
-  const filteredExercises = state.exercises.filter((ex) => {
-    if (categoryFilter !== 'all' && ex.category !== categoryFilter) return false;
-    if (selectedMuscle && ex.primaryMuscle !== selectedMuscle && !ex.secondaryMuscles?.includes(selectedMuscle)) {
-      return false;
-    }
-    return true;
-  });
-
   const totalPassiveExpPerSec = state.upgrades.reduce(
     (sum, u) => sum + u.passiveExpPerSec * u.ownedCount,
     0
   );
 
+  const current1RM = calculateCurrent1RM(state);
+  const big3Total = current1RM.benchPress + current1RM.squat + current1RM.deadlift;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans pb-16">
-      {/* 浮遊エフェクト */}
+    <div className="relative min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans overflow-x-hidden select-none">
+      {/* 浮遊テキスト */}
       <FloatingNumbers floatingTexts={floatingTexts} />
 
-      {/* ヘッダー */}
-      <Header
-        state={state}
-        onOpenProfile={() => setIsProfileOpen(true)}
-        onOpenAchievements={() => setIsAchievementsOpen(true)}
-        onOpenStats={() => setIsStatsOpen(true)}
-        isMuted={isMuted}
-        onToggleMute={() => setIsMuted(soundManager.toggleMute())}
-      />
+      {/* ================= 上部 HUD (ゲーム風ステータスバー) ================= */}
+      <header className="z-30 bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          {/* プレイヤー情報 ＆ レベル */}
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center text-xl shadow-lg shadow-cyan-500/30">
+              💪
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-black tracking-wider text-white font-display">
+                  PUMP HERO <span className="text-cyan-400">3D</span>
+                </h1>
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-display">
+                  Lv.{state.playerLevel}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {state.profile.name} (BIG3推定: <strong className="text-amber-400">{big3Total}kg</strong>)
+              </p>
+            </div>
+          </div>
 
-      {/* メインコンテナ */}
-      <main className="max-w-7xl mx-auto px-4 py-6 w-full flex-1 space-y-6">
-        {/* パンプ感＆疲労度コントロール */}
-        <PumpBar
-          pumpGauge={state.pumpGauge}
-          isPumpMode={state.isPumpMode}
-          pumpTimeRemaining={state.pumpTimeRemaining}
-          fatigue={state.fatigue}
-          onRest={handleRest}
-          onDrinkShake={handleDrinkShake}
-          canAffordShake={state.totalMuscleExp >= shakeCost}
-          shakeCost={shakeCost}
+          {/* 筋EXP ＆ 放置秒給 */}
+          <div className="flex items-center gap-2 sm:gap-4">
+            <div className="bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-2xl flex items-center gap-2">
+              <span className="text-base animate-pulse">⚡</span>
+              <div>
+                <div className="text-[9px] text-slate-400 font-semibold">所持 筋EXP</div>
+                <div className="text-sm font-black text-cyan-400 font-display">
+                  {formatNumber(state.totalMuscleExp)}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-2xl hidden sm:flex items-center gap-2">
+              <span className="text-base">⏳</span>
+              <div>
+                <div className="text-[9px] text-slate-400 font-semibold">自動放置育成</div>
+                <div className="text-sm font-black text-emerald-400 font-display">
+                  +{totalPassiveExpPerSec} /秒
+                </div>
+              </div>
+            </div>
+
+            {/* ナビゲーションアイコンボタン群 */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsShopOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-bold text-cyan-300 transition cursor-pointer flex items-center gap-1 shadow-sm"
+                title="ショップ＆放置育成"
+              >
+                <span>💊</span>
+                <span className="hidden md:inline">ショップ</span>
+              </button>
+
+              <button
+                onClick={() => setIsAnatomyOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-bold text-slate-300 transition cursor-pointer flex items-center gap-1 shadow-sm"
+                title="筋肉アナトミー"
+              >
+                <span>🧬</span>
+                <span className="hidden md:inline">筋肉部位</span>
+              </button>
+
+              <button
+                onClick={() => setIsAchievementsOpen(true)}
+                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-amber-400 transition cursor-pointer text-xs"
+                title="実績"
+              >
+                🏆
+              </button>
+
+              <button
+                onClick={() => setIsStatsOpen(true)}
+                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 transition cursor-pointer text-xs"
+                title="成長カルテ"
+              >
+                📊
+              </button>
+
+              <button
+                onClick={() => setIsProfileOpen(true)}
+                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 transition cursor-pointer text-xs"
+                title="身体データ設定"
+              >
+                ⚙️
+              </button>
+
+              <button
+                onClick={() => setIsMuted(soundManager.toggleMute())}
+                className="p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-400 transition cursor-pointer text-xs"
+                title={isMuted ? 'ミュート解除' : 'ミュート'}
+              >
+                {isMuted ? '🔇' : '🔊'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ================= メイン 3D ゲームビューポート ＆ コントロール ================= */}
+      <main className="max-w-7xl mx-auto px-4 py-3 w-full flex-1 flex flex-col space-y-3">
+        {/* パンプ感ゲージ ＆ 疲労度バー (アーケードゲーム風HUD) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* PUMP GAUGE */}
+          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 px-3.5 shadow-xl">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-bold text-orange-400 tracking-wide flex items-center gap-1.5 uppercase font-display">
+                <span className="animate-bounce">🔥</span>
+                <span>{state.isPumpMode ? '✨ SUPER PUMP MODE 発動中！ ✨' : 'PUMP GAUGE (パンプ熱気)'}</span>
+              </span>
+              <span className="text-xs font-black font-display text-white">
+                {state.isPumpMode
+                  ? `${state.pumpTimeRemaining}秒 (EXP 3倍 / 疲労ゼロ)`
+                  : `${Math.floor(state.pumpGauge)}%`}
+              </span>
+            </div>
+            <div className="w-full bg-slate-950 rounded-full h-2.5 p-0.5 border border-slate-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-150 ${
+                  state.isPumpMode
+                    ? 'bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500 animate-pulse shadow-lg shadow-orange-500/60'
+                    : 'bg-gradient-to-r from-orange-600 to-amber-400'
+                }`}
+                style={{
+                  width: state.isPumpMode
+                    ? `${(state.pumpTimeRemaining / 15) * 100}%`
+                    : `${state.pumpGauge}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* FATIGUE & 疲労回復クイックボタン */}
+          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-800 rounded-2xl p-2.5 px-3.5 shadow-xl flex items-center justify-between gap-3">
+            <div className="flex-1">
+              <div className="flex justify-between items-center mb-1 text-xs">
+                <span className="font-bold text-slate-300 flex items-center gap-1">
+                  <span>⚡</span>
+                  <span>FATIGUE 疲労度</span>
+                </span>
+                <span
+                  className={`font-black font-display ${
+                    state.fatigue > 75 ? 'text-rose-400 animate-pulse' : 'text-slate-400'
+                  }`}
+                >
+                  {Math.floor(state.fatigue)}% {state.fatigue > 75 && '(筋肉痛!)'}
+                </span>
+              </div>
+              <div className="w-full bg-slate-950 rounded-full h-2.5 p-0.5 border border-slate-800 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    state.fatigue > 75
+                      ? 'bg-gradient-to-r from-amber-500 to-rose-500'
+                      : 'bg-gradient-to-r from-emerald-500 to-cyan-500'
+                  }`}
+                  style={{ width: `${state.fatigue}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={handleRest}
+                className="py-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[11px] font-bold border border-slate-700 transition cursor-pointer"
+                title="深呼吸・休息"
+              >
+                🧘 休息
+              </button>
+              <button
+                onClick={handleDrinkShake}
+                disabled={state.totalMuscleExp < shakeCost || state.fatigue <= 0}
+                className={`py-1 px-2.5 rounded-xl text-[11px] font-bold border transition cursor-pointer ${
+                  state.totalMuscleExp >= shakeCost && state.fatigue > 0
+                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/30'
+                    : 'bg-slate-950 text-slate-600 border-slate-800 cursor-not-allowed'
+                }`}
+                title="特濃プロテインで全快"
+              >
+                🥤 プロテイン ({shakeCost})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 3D 空間キャンバス */}
+        <div className="relative w-full flex-1">
+          <ThreeGymCanvas
+            currentExercise={currentExercise}
+            muscleStats={state.muscleStats}
+            isPumpMode={state.isPumpMode}
+            fatigue={state.fatigue}
+            repTrigger={repTrigger}
+          />
+        </div>
+
+        {/* 巨大な「1 REP 挙上！」メインアクションボタン */}
+        <div className="w-full max-w-xl mx-auto">
+          <button
+            onClick={(e) => handlePerformRep(e.clientX, e.clientY)}
+            className={`w-full py-4 px-6 rounded-3xl font-black text-lg sm:text-xl text-white transition-all transform cursor-pointer flex items-center justify-center gap-3 select-none shadow-2xl active:scale-[0.96] border ${
+              isPressingRep ? 'scale-[0.96] brightness-125' : 'hover:scale-[1.01]'
+            } ${
+              state.isPumpMode
+                ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 border-amber-300 shadow-orange-500/40 animate-pulse'
+                : currentExercise.category === 'gym'
+                ? 'bg-gradient-to-r from-amber-600 via-rose-600 to-orange-600 border-amber-500/40 shadow-amber-600/30'
+                : 'bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 border-cyan-400/40 shadow-cyan-500/30'
+            }`}
+          >
+            <span className="text-2xl">💪</span>
+            <span className="tracking-wider">
+              {currentExercise.name} 1 REP 挙上！
+            </span>
+            <span className="text-xs font-normal opacity-80 bg-black/30 px-2.5 py-1 rounded-full">
+              [Spaceキー連打OK]
+            </span>
+          </button>
+        </div>
+
+        {/* 種目セレクトカルーセル */}
+        <ExerciseCarousel
+          exercises={state.exercises}
+          currentExerciseId={currentExerciseId}
+          onSelectExercise={setCurrentExerciseId}
+          onUpgradeLevel={handleUpgradeExercise}
+          availableExp={state.totalMuscleExp}
         />
+      </main>
 
-        {/* 2カラムレイアウト: マッスルマップ ＆ 種目/ショップ */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* 左カラム: アナトミーマップ (4 cols) */}
-          <div className="lg:col-span-4 space-y-4">
+      {/* ================= モーダル群 (ショップ、アナトミー、実績、カルテ、設定) ================= */}
+      {/* ニュートリション＆施設ショップ モーダル */}
+      {isShopOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-3xl p-6 shadow-2xl text-slate-100 my-8">
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => setIsShopOpen(false)}
+                className="text-slate-400 hover:text-white text-xl p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                ✕ 閉じる
+              </button>
+            </div>
+            <NutritionShop
+              upgrades={state.upgrades}
+              availableExp={state.totalMuscleExp}
+              totalPassiveExpPerSec={totalPassiveExpPerSec}
+              hasGymMembership={state.hasGymMembership}
+              onBuyUpgrade={handleBuyUpgrade}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 筋肉アナトミーマップ モーダル */}
+      {isAnatomyOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-xl p-6 shadow-2xl text-slate-100 my-8">
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => setIsAnatomyOpen(false)}
+                className="text-slate-400 hover:text-white text-xl p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                ✕ 閉じる
+              </button>
+            </div>
             <MuscleMap
               muscleStats={state.muscleStats}
               selectedMuscle={selectedMuscle}
               onSelectMuscle={setSelectedMuscle}
               isPumpMode={state.isPumpMode}
             />
-
-            {/* クイックガイダンスカード */}
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 space-y-2">
-              <div className="font-bold text-white flex items-center gap-1.5">
-                <span>💡</span>
-                <span>トレーナーからの助言</span>
-              </div>
-              <p>
-                「まずは<strong className="text-cyan-400">腕立て・腹筋・スクワット</strong>の基本3種目をこなそう！
-                種目レベルを上げると新しい自重トレや、やがて<strong className="text-amber-400">ジム会員権</strong>でベンチプレスなどの高重量種目が解放されるぞ！」
-              </p>
-            </div>
-          </div>
-
-          {/* 右カラム: 種目一覧 または ショップ (8 cols) */}
-          <div className="lg:col-span-8 space-y-4">
-            {/* メインタブ切り替え (ワークアウト / ショップ) */}
-            <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
-              <button
-                onClick={() => setActiveTab('exercises')}
-                className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'exercises'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>🏋️</span>
-                <span>ワークアウト種目 ({state.exercises.filter((e) => e.unlocked).length}/{state.exercises.length} 解放)</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('shop')}
-                className={`flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-                  activeTab === 'shop'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/25'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>💊</span>
-                <span>ショップ＆放置育成 (+{totalPassiveExpPerSec} EXP/秒)</span>
-              </button>
-            </div>
-
-            {/* 種目タブのとき */}
-            {activeTab === 'exercises' && (
-              <div className="space-y-4">
-                {/* フィルターバー */}
-                <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/50 p-3 rounded-xl border border-slate-800">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-slate-400 font-semibold">カテゴリ:</span>
-                    <div className="flex bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-                      <button
-                        onClick={() => setCategoryFilter('all')}
-                        className={`px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                          categoryFilter === 'all'
-                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        すべて
-                      </button>
-                      <button
-                        onClick={() => setCategoryFilter('bodyweight')}
-                        className={`px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                          categoryFilter === 'bodyweight'
-                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        自重トレ
-                      </button>
-                      <button
-                        onClick={() => setCategoryFilter('gym')}
-                        className={`px-3 py-1 text-xs font-semibold rounded-md transition cursor-pointer ${
-                          categoryFilter === 'gym'
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        ジム種目
-                      </button>
-                    </div>
-                  </div>
-
-                  {selectedMuscle && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-cyan-400 font-bold">
-                        部位絞り込み中
-                      </span>
-                      <button
-                        onClick={() => setSelectedMuscle(null)}
-                        className="text-[11px] text-slate-400 hover:text-white bg-slate-800 px-2 py-0.5 rounded cursor-pointer"
-                      >
-                        リセット
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* 種目カードグリッド */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredExercises.map((exercise) => (
-                    <ExerciseCard
-                      key={exercise.id}
-                      exercise={exercise}
-                      userWeight={state.profile.weight}
-                      availableExp={state.totalMuscleExp}
-                      isPumpMode={state.isPumpMode}
-                      fatigue={state.fatigue}
-                      onPerformRep={handlePerformRep}
-                      onUpgradeLevel={handleUpgradeExercise}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ショップタブのとき */}
-            {activeTab === 'shop' && (
-              <NutritionShop
-                upgrades={state.upgrades}
-                availableExp={state.totalMuscleExp}
-                totalPassiveExpPerSec={totalPassiveExpPerSec}
-                hasGymMembership={state.hasGymMembership}
-                onBuyUpgrade={handleBuyUpgrade}
-              />
-            )}
           </div>
         </div>
-      </main>
+      )}
 
-      {/* モーダル群 */}
+      {/* 初回・身体測定プロファイル設定 */}
       <ProfileModal
         currentProfile={state.profile}
         isOpen={isProfileOpen}
@@ -635,12 +773,14 @@ export const App: React.FC = () => {
         isFirstTime={!state.profile.isInitialized}
       />
 
+      {/* 実績モーダル */}
       <AchievementsModal
         isOpen={isAchievementsOpen}
         onClose={() => setIsAchievementsOpen(false)}
         achievements={state.achievements}
       />
 
+      {/* 成長カルテ＆データリセット */}
       <WorkoutSummary
         isOpen={isStatsOpen}
         onClose={() => setIsStatsOpen(false)}
