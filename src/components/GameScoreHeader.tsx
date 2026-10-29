@@ -7,12 +7,7 @@ interface GameScoreHeaderProps {
   onModeChange: (mode: GameMode) => void;
   onUndo: () => void;
   canUndo: boolean;
-  onRestart: () => void;
   onOpenRules: () => void;
-  showHints: boolean;
-  onToggleHints: () => void;
-  isMuted: boolean;
-  onToggleMute: () => void;
   isAiThinking: boolean;
 }
 
@@ -29,17 +24,12 @@ export const GameScoreHeader: React.FC<GameScoreHeaderProps> = ({
   onModeChange,
   onUndo,
   canUndo,
-  onRestart,
   onOpenRules,
-  showHints,
-  onToggleHints,
-  isMuted,
-  onToggleMute,
   isAiThinking,
 }) => {
   return (
     <header className="w-full max-w-[640px] mx-auto pt-4 pb-2 px-2 space-y-3">
-      {/* 上部: タイトルとモノトーンコントロール */}
+      {/* 上部: タイトルと厳選された最小限のコントロール */}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-base sm:text-lg font-bold text-white tracking-wider flex items-center gap-2">
           <span>16×16 REVERSI</span>
@@ -48,7 +38,7 @@ export const GameScoreHeader: React.FC<GameScoreHeaderProps> = ({
           </span>
         </h1>
 
-        <div className="flex items-center gap-1.5 text-xs">
+        <div className="flex items-center gap-2 text-xs">
           {/* モード切替 */}
           <select
             value={mode}
@@ -80,37 +70,10 @@ export const GameScoreHeader: React.FC<GameScoreHeaderProps> = ({
           >
             待った
           </button>
-
-          <button
-            onClick={onToggleHints}
-            className={`px-2.5 py-1 rounded-lg border font-medium transition cursor-pointer ${
-              showHints
-                ? 'bg-white text-black border-white font-bold'
-                : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:text-neutral-300'
-            }`}
-          >
-            ヒント
-          </button>
-
-          <button
-            onClick={onToggleMute}
-            className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 transition cursor-pointer"
-            title={isMuted ? 'ミュート解除' : 'ミュート'}
-          >
-            {isMuted ? '🔇' : '🔊'}
-          </button>
-
-          <button
-            onClick={onRestart}
-            className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-700 hover:bg-neutral-800 text-neutral-300 transition cursor-pointer"
-            title="リセット"
-          >
-            🔄
-          </button>
         </div>
       </div>
 
-      {/* スコア表示ボード (洗練された白・黒・灰色のモノトーン) */}
+      {/* スコア表示ボード (洗練された白・黒・灰色モノトーン) */}
       <div className="grid grid-cols-2 gap-3">
         {/* 黒プレイヤー */}
         <div

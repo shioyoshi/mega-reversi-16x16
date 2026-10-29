@@ -14,7 +14,6 @@ import {
   getBoardStats,
 } from './utils/reversiLogic';
 import { getAiMove } from './utils/reversiAi';
-import { soundManager } from './utils/reversiAudio';
 
 import { ReversiBoard } from './components/ReversiBoard';
 import { GameScoreHeader } from './components/GameScoreHeader';
@@ -44,8 +43,6 @@ export const App: React.FC = () => {
 
   const [isGameOver, setIsGameOver] = useState(false);
   const [winner, setWinner] = useState<PlayerColor | 'draw' | null>(null);
-  const [showHints, setShowHints] = useState(true);
-  const [isMuted, setIsMuted] = useState(soundManager.getMuted());
 
   // トーストメッセージ (モノトーン)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -61,7 +58,7 @@ export const App: React.FC = () => {
     winner,
   };
 
-  // 着手処理
+  // 着手処理 (音声は常に無音)
   const executeMove = useCallback(
     (pos: Position, player: PlayerColor) => {
       setHistory((prev) => [
@@ -77,15 +74,8 @@ export const App: React.FC = () => {
       const moveResult = makeMove(newBoard, pos, player);
       if (!moveResult) return;
 
-      soundManager.playPlacePiece();
-
-      if (moveResult.flippedNormal.length > 0) {
-        soundManager.playFlipPiece(moveResult.flippedNormal.length);
-      }
-
       // 特別ルール: 今回新たに2x2を完成させたことによるメガ反転
       if (moveResult.flippedMega.length > 0) {
-        soundManager.playMegaReversal();
         confetti({
           particleCount: 75,
           spread: 80,
@@ -130,7 +120,6 @@ export const App: React.FC = () => {
     else if (finalStats.whiteCount > finalStats.blackCount) winResult = 'white';
 
     setWinner(winResult);
-    soundManager.playWin();
     confetti({
       particleCount: 100,
       spread: 90,
@@ -195,8 +184,8 @@ export const App: React.FC = () => {
     }
   };
 
-  // リセット
-  const handleRestart = () => {
+  // 対局リセット (モード変更時や終局後)
+  const resetGame = () => {
     setBoard(createInitialBoard());
     setTurn('black');
     setHistory([]);
@@ -211,22 +200,17 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-100 flex flex-col font-sans select-none pb-8">
-      {/* スコア ＆ 操作ヘッダー (白・黒・灰色モノトーン) */}
+      {/* スコア ＆ 最小限の操作ヘッダー (ヒント・音・リセットボタンを削除しシンプル化) */}
       <GameScoreHeader
         stats={gameStats}
         mode={mode}
         onModeChange={(newMode) => {
           setMode(newMode);
-          handleRestart();
+          resetGame();
         }}
         onUndo={handleUndo}
         canUndo={history.length > 0}
-        onRestart={handleRestart}
         onOpenRules={() => setIsRulesOpen(true)}
-        showHints={showHints}
-        onToggleHints={() => setShowHints((h) => !h)}
-        isMuted={isMuted}
-        onToggleMute={() => setIsMuted(soundManager.toggleMute())}
         isAiThinking={isAiThinking}
       />
 
@@ -239,7 +223,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* 盤面 (オセログリーン) */}
+      {/* 盤面 (ヒント常に表示) */}
       <main className="max-w-2xl mx-auto px-2 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
         <ReversiBoard
           board={board}
@@ -249,22 +233,21 @@ export const App: React.FC = () => {
           lastMegaFlipped={lastMegaFlipped}
           turn={turn}
           onCellClick={handleCellClick}
-          showHints={showHints}
         />
       </main>
 
-      {/* 特別ルール解説モーダル (モノトーン・初回アクセス時自動表示) */}
+      {/* 特別ルール解説モーダル (初回アクセス時自動表示) */}
       <RulesModal
         isOpen={isRulesOpen}
         onClose={() => setIsRulesOpen(false)}
         isFirstVisit={true}
       />
 
-      {/* 終局結果モーダル (モノトーン) */}
+      {/* 終局結果モーダル */}
       <GameOverModal
         isOpen={isGameOver}
         stats={gameStats}
-        onRestart={handleRestart}
+        onRestart={resetGame}
       />
     </div>
   );

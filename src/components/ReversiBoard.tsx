@@ -16,7 +16,6 @@ interface ReversiBoardProps {
   lastMegaFlipped: Position[];
   turn: PlayerColor;
   onCellClick: (row: number, col: number) => void;
-  showHints: boolean;
 }
 
 export const ReversiBoard: React.FC<ReversiBoardProps> = ({
@@ -27,9 +26,8 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
   lastMegaFlipped,
   turn: _turn,
   onCellClick,
-  showHints,
 }) => {
-  // 有効手セット
+  // 有効手セット (常に表示)
   const validMoveMap = new Map<string, boolean>();
   validMoves.forEach((m) => validMoveMap.set(`${m.row},${m.col}`, true));
 
@@ -58,7 +56,7 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
               const isBlockBorderRight = cIdx % 2 === 1 && cIdx !== BOARD_SIZE - 1;
               const isBlockBorderBottom = rIdx % 2 === 1 && rIdx !== BOARD_SIZE - 1;
 
-              // 4マスごとの交差点にオセロの星（目印ドット）を配置
+              // 4マスごとの交差点にオセロの星（目印ドット）
               const isStarPoint =
                 (rIdx === 4 || rIdx === 8 || rIdx === 12) &&
                 (cIdx === 4 || cIdx === 8 || cIdx === 12);
@@ -68,8 +66,8 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
                   key={`${rIdx}-${cIdx}`}
                   onClick={() => onCellClick(rIdx, cIdx)}
                   className={`relative flex items-center justify-center cursor-pointer transition-colors duration-100 ${
-                    isValid && showHints
-                      ? 'bg-[#00c800] hover:bg-[#00db00]' // 打てる場所: 画像通りの鮮やかなライトグリーン
+                    isValid
+                      ? 'bg-[#00c800] hover:bg-[#00db00]' // ヒント常に表示: 画像通りのライトグリーン
                       : dominance === 'black'
                       ? 'bg-[#007b00] hover:bg-[#008800]' // 黒の2x2完成ブロック内
                       : dominance === 'white'
@@ -114,8 +112,8 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
                     </div>
                   )}
 
-                  {/* 有効手のドット */}
-                  {!cell && isValid && showHints && (
+                  {/* 有効手のドット (画像通りのセンタードット、常に表示) */}
+                  {!cell && isValid && (
                     <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#004d00] pointer-events-none" />
                   )}
                 </div>
