@@ -47,7 +47,7 @@ export const App: React.FC = () => {
   const [showHints, setShowHints] = useState(true);
   const [isMuted, setIsMuted] = useState(soundManager.getMuted());
 
-  // トーストメッセージ
+  // トーストメッセージ (モノトーン)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const validMoves = getValidMoves(board, turn);
@@ -210,8 +210,8 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d131f] text-slate-100 flex flex-col font-sans select-none pb-8">
-      {/* スコア ＆ 操作ヘッダー */}
+    <div className="min-h-screen bg-[#0a0a0a] text-neutral-100 flex flex-col font-sans select-none pb-8">
+      {/* スコア ＆ 操作ヘッダー (白・黒・灰色モノトーン) */}
       <GameScoreHeader
         stats={gameStats}
         mode={mode}
@@ -230,16 +230,16 @@ export const App: React.FC = () => {
         isAiThinking={isAiThinking}
       />
 
-      {/* トースト通知 */}
+      {/* モノトーン・トースト通知 */}
       {toastMessage && (
         <div className="w-full max-w-md mx-auto px-4 mt-2 animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="bg-slate-900 text-amber-300 border border-amber-400/40 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-lg">
+          <div className="bg-neutral-900 text-white border border-neutral-700 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-xl">
             {toastMessage}
           </div>
         </div>
       )}
 
-      {/* 盤面 */}
+      {/* 盤面 (オセログリーン) */}
       <main className="max-w-2xl mx-auto px-2 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
         <ReversiBoard
           board={board}
@@ -253,14 +253,14 @@ export const App: React.FC = () => {
         />
       </main>
 
-      {/* 特別ルール解説モーダル (初回アクセス時自動表示) */}
+      {/* 特別ルール解説モーダル (モノトーン・初回アクセス時自動表示) */}
       <RulesModal
         isOpen={isRulesOpen}
         onClose={() => setIsRulesOpen(false)}
         isFirstVisit={true}
       />
 
-      {/* 終局結果モーダル */}
+      {/* 終局結果モーダル (モノトーン) */}
       <GameOverModal
         isOpen={isGameOver}
         stats={gameStats}

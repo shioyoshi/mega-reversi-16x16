@@ -49,7 +49,7 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
               const isLast = lastMove?.row === rIdx && lastMove?.col === cIdx;
               const isMega = megaFlipMap.has(`${rIdx},${cIdx}`);
 
-              // 2x2 ブロック情報 (16マスを2x2ごとに区切る)
+              // 2x2 ブロック情報
               const bR = Math.floor(rIdx / BLOCK_SIZE);
               const bC = Math.floor(cIdx / BLOCK_SIZE);
               const dominance = getBlockDominance(board, { blockRow: bR, blockCol: bC });
@@ -77,18 +77,20 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
                       : 'bg-[#008f00] hover:bg-[#009b00]'
                   } ${isBlockBorderRight ? 'border-r border-[#005200]/80' : ''} ${
                     isBlockBorderBottom ? 'border-b border-[#005200]/80' : ''
-                  } ${isMega ? 'ring-2 ring-amber-400 z-10' : ''}`}
+                  } ${isMega ? 'ring-2 ring-white z-10' : ''}`}
                 >
                   {/* オセロ盤の星（目印の黒ドット） */}
                   {isStarPoint && !cell && (
                     <div className="absolute -top-1 -left-1 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-black rounded-full z-10 pointer-events-none" />
                   )}
 
-                  {/* 2x2完成ブロックの控えめな識別マーク (ブロック左上マスに表示) */}
+                  {/* 2x2完成ブロックのモノトーン目印マーク (ブロック左上マスに表示) */}
                   {rIdx % 2 === 0 && cIdx % 2 === 0 && dominance && (
                     <div
                       className={`absolute top-0.5 left-0.5 w-1.5 h-1.5 rounded-full z-10 pointer-events-none shadow-sm ${
-                        dominance === 'black' ? 'bg-amber-400' : 'bg-cyan-300'
+                        dominance === 'black'
+                          ? 'bg-black border border-white/60'
+                          : 'bg-white border border-black/40'
                       }`}
                     />
                   )}
@@ -100,9 +102,8 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
                         cell === 'black'
                           ? 'bg-gradient-to-b from-[#2a2a2a] via-[#151515] to-[#050505] shadow-[0_2px_4px_rgba(0,0,0,0.6)] border border-[#333]'
                           : 'bg-gradient-to-b from-[#ffffff] via-[#f4f4f4] to-[#dedede] shadow-[0_2px_4px_rgba(0,0,0,0.35)] border border-[#d0d0d0]'
-                      } ${isLast ? 'ring-2 ring-amber-400' : ''}`}
+                      } ${isLast ? 'ring-2 ring-white shadow-lg' : ''}`}
                     >
-                      {/* 上部の上品なハイライト */}
                       <div
                         className={`w-3/5 h-2/5 rounded-full opacity-30 -mt-1 ${
                           cell === 'black'
@@ -113,7 +114,7 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
                     </div>
                   )}
 
-                  {/* 有効手のドット (画像通りのセンタードット) */}
+                  {/* 有効手のドット */}
                   {!cell && isValid && showHints && (
                     <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-[#004d00] pointer-events-none" />
                   )}
@@ -124,17 +125,17 @@ export const ReversiBoard: React.FC<ReversiBoardProps> = ({
         </div>
       </div>
 
-      {/* 下部のシンプルな状態凡例 */}
-      <div className="flex justify-between items-center text-xs text-slate-300 mt-2.5 px-2 font-medium">
+      {/* 下部のモノトーン凡例 */}
+      <div className="flex justify-between items-center text-xs text-neutral-400 mt-2.5 px-2 font-medium">
         <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block shadow-sm" />
+          <span className="w-2.5 h-2.5 rounded-full bg-black border border-neutral-500 inline-block shadow-sm" />
           <span>黒の2×2完成</span>
         </div>
-        <div className="text-[11px] text-slate-400">
-          2×2を同色で揃えた時、直線上の敵石を一網打尽！
+        <div className="text-neutral-500 text-[11px]">
+          2×2を同色で揃えた時、直線上の敵石を一網打尽
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-cyan-300 inline-block shadow-sm" />
+          <span className="w-2.5 h-2.5 rounded-full bg-white border border-neutral-400 inline-block shadow-sm" />
           <span>白の2×2完成</span>
         </div>
       </div>
