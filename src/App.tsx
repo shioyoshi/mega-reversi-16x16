@@ -200,7 +200,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-neutral-100 flex flex-col font-sans select-none pb-8">
-      {/* スコア ＆ 最小限の操作ヘッダー (ヒント・音・リセットボタンを削除しシンプル化) */}
+      {/* スコア ＆ 最小限の操作ヘッダー (パス・通知は既存の隙間スロットで代替表示し盤面移動を防止) */}
       <GameScoreHeader
         stats={gameStats}
         mode={mode}
@@ -212,19 +212,11 @@ export const App: React.FC = () => {
         canUndo={history.length > 0}
         onOpenRules={() => setIsRulesOpen(true)}
         isAiThinking={isAiThinking}
+        message={toastMessage}
       />
 
-      {/* モノトーン・トースト通知 */}
-      {toastMessage && (
-        <div className="w-full max-w-md mx-auto px-4 mt-2 animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="bg-neutral-900 text-white border border-neutral-700 font-bold px-3 py-2 rounded-xl text-center text-xs shadow-xl">
-            {toastMessage}
-          </div>
-        </div>
-      )}
-
-      {/* 盤面 (ヒント常に表示) */}
-      <main className="max-w-2xl mx-auto px-2 sm:px-4 py-2 w-full flex-1 flex flex-col items-center justify-center">
+      {/* 盤面 (ヒント常に表示・通知による上下移動完全ゼロ) */}
+      <main className="max-w-2xl mx-auto px-2 sm:px-4 py-1 w-full flex-1 flex flex-col items-center justify-center">
         <ReversiBoard
           board={board}
           validMoves={validMoves}

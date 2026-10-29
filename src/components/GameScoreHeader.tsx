@@ -9,6 +9,7 @@ interface GameScoreHeaderProps {
   canUndo: boolean;
   onOpenRules: () => void;
   isAiThinking: boolean;
+  message?: string | null;
 }
 
 const modeLabels: Record<GameMode, string> = {
@@ -26,9 +27,10 @@ export const GameScoreHeader: React.FC<GameScoreHeaderProps> = ({
   canUndo,
   onOpenRules,
   isAiThinking,
+  message,
 }) => {
   return (
-    <header className="w-full max-w-[640px] mx-auto pt-4 pb-2 px-2 space-y-3">
+    <header className="w-full max-w-[640px] mx-auto pt-3 pb-1 px-2 space-y-2">
       {/* 上部: タイトルと厳選された最小限のコントロール */}
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-base sm:text-lg font-bold text-white tracking-wider flex items-center gap-2">
@@ -132,6 +134,33 @@ export const GameScoreHeader: React.FC<GameScoreHeaderProps> = ({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* ステータス / パス・通知代替表示エリア (固定高h-8でレイアウトシフト・盤面移動を完全ゼロ化) */}
+      <div className="h-8 flex items-center justify-center">
+        {message ? (
+          <div className="w-full bg-neutral-900 text-white border border-neutral-700 font-bold px-3 py-1 rounded-lg text-center text-xs shadow-md animate-in fade-in duration-100">
+            {message}
+          </div>
+        ) : (
+          <div className="text-xs text-neutral-400 font-medium flex items-center gap-1.5">
+            <span
+              className={`inline-block w-2 h-2 rounded-full ${
+                stats.turn === 'black'
+                  ? 'bg-neutral-200 shadow-[0_0_6px_rgba(255,255,255,0.6)]'
+                  : 'bg-neutral-400'
+              }`}
+            />
+            <span>
+              {stats.turn === 'black'
+                ? '黒の手番です'
+                : mode === 'pvp'
+                ? '白の手番です'
+                : '白(CPU)の手番です'}
+              {isAiThinking && ' (思考中...)'}
+            </span>
+          </div>
+        )}
       </div>
     </header>
   );
